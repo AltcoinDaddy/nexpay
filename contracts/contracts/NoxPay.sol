@@ -80,6 +80,11 @@ interface IConfidentialToken {
     /// @param viewer The address being granted view access
     function addViewer(bytes32 handle, address viewer) external;
 
+    /// @notice Removes view access for a specific address when supported
+    /// @param handle The encrypted handle to revoke access from
+    /// @param viewer The address whose access is being revoked
+    function removeViewer(bytes32 handle, address viewer) external;
+
     /// @notice Returns the underlying ERC-20 token address
     function underlying() external view returns (address);
 }
@@ -148,6 +153,7 @@ contract NoxPay is Ownable, ReentrancyGuard {
         address viewer;            // Address granted view access
         uint256 expiresAt;         // Timestamp when access expires
         bool active;               // Whether access is currently active
+        bytes32 balanceHandle;     // Handle shared with the viewer
     }
 
     /// @notice View access grants: granter => grant ID => ViewAccess
@@ -226,6 +232,7 @@ contract NoxPay is Ownable, ReentrancyGuard {
     error InvalidAddress();
     error InvalidAmount();
     error InvalidDuration();
+    error GrantNotActive();
     error VestingNotActive();
     error NothingToClaim();
     error AccessExpired();
@@ -523,7 +530,8 @@ contract NoxPay is Ownable, ReentrancyGuard {
         viewAccessGrants[msg.sender][grantId] = ViewAccess({
             viewer: viewer,
             expiresAt: expiresAt,
-            active: true
+            active: true,
+            balanceHandle: balanceHandle
         });
 
         viewAccessGrantCount[msg.sender] += 1;
@@ -540,7 +548,19 @@ contract NoxPay is Ownable, ReentrancyGuard {
      */
     function revokeViewAccess(uint256 grantId) external {
         ViewAccess storage grant = viewAccessGrants[msg.sender][grantId];
+        if (!grant.active) revert GrantNotActive();
         grant.active = false;
+
+        if (grant.balanceHandle != bytes32(0) && grant.viewer != address(0)) {
+            (bool success, ) = address(confidentialToken).call(
+                abi.encodeWithSelector(
+                    IConfidentialToken.removeViewer.selector,
+                    grant.balanceHandle,
+                    grant.viewer
+                )
+            );
+            success;
+        }
 
         emit ViewAccessRevoked(msg.sender, grantId);
     }

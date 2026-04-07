@@ -1,10 +1,15 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { KeyRound, UserPlus, Trash2, Loader2, Shield, Clock } from 'lucide-react';
-import { useAccount, useWriteContract } from 'wagmi';
-import { CONTRACTS, NOXPAY_ABI } from '../config/contracts';
+import { KeyRound, UserPlus, Trash2, Loader2, Shield, Clock, Info } from 'lucide-react';
+import { isAddress } from 'viem';
+import { useAccount, usePublicClient, useReadContract, useReadContracts, useWriteContract } from 'wagmi';
+import { CONTRACTS, NOXPAY_ABI, ZERO_ADDRESS } from '../config/contracts';
 import { useContractConfig } from '../hooks/useContractConfig';
 import toast from 'react-hot-toast';
+
+function shortenAddress(address: string) {
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
 
 export function SelectiveDisclosure() {
   const { address } = useAccount();
@@ -12,61 +17,126 @@ export function SelectiveDisclosure() {
   const [accessDuration, setAccessDuration] = useState('24');
   const [isOpen, setIsOpen] = useState(false);
   const contractConfig = useContractConfig();
+  const publicClient = usePublicClient();
+  const hasContractConfig = CONTRACTS.NOXPAY !== ZERO_ADDRESS;
 
-  const { writeContract: grantAccess, isPending: isGranting } = useWriteContract();
-  const { writeContract: revokeAccess, isPending: isRevoking } = useWriteContract();
+  const { writeContractAsync: writeContractAsync, isPending } = useWriteContract();
 
-  // Demo active grants
-  const [activeGrants] = useState([
-    {
-      id: 0,
-      viewer: '0x8f3c...a91b',
-      expiresAt: '2026-04-08 14:00',
-      label: 'Auditor',
-    },
-  ]);
+  const { data: balanceHandle } = useReadContract({
+    address: CONTRACTS.NOXPAY as `0x${string}`,
+    abi: NOXPAY_ABI,
+    functionName: 'getConfidentialBalance',
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(address && hasContractConfig) },
+  });
+
+  const { data: grantCountData } = useReadContract({
+    address: CONTRACTS.NOXPAY as `0x${string}`,
+    abi: NOXPAY_ABI,
+    functionName: 'viewAccessGrantCount',
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(address && hasContractConfig) },
+  });
+
+  const grantIndexes = Array.from(
+    { length: Math.min(Number(grantCountData ?? 0n), 10) },
+    (_, index) => BigInt(index)
+  );
+
+  const { data: grantsData } = useReadContracts({
+    contracts: address
+      ? grantIndexes.map((grantId) => ({
+          address: CONTRACTS.NOXPAY as `0x${string}`,
+          abi: NOXPAY_ABI,
+          functionName: 'viewAccessGrants',
+          args: [address, grantId],
+        }))
+      : [],
+    query: { enabled: Boolean(address && grantIndexes.length > 0 && hasContractConfig) },
+  });
+
+  const activeGrants = grantIndexes
+    .map((grantId, index) => {
+      const rawGrant = grantsData?.[index]?.result;
+      if (!rawGrant) {
+        return null;
+      }
+
+      const viewer = rawGrant[0] as string;
+      const expiresAt = Number(rawGrant[1]);
+      const active = Boolean(rawGrant[2]);
+
+      return {
+        id: Number(grantId),
+        viewer,
+        expiresAt,
+        active,
+      };
+    })
+    .filter((grant): grant is NonNullable<typeof grant> => grant !== null && grant.active)
+    .sort((left, right) => right.expiresAt - left.expiresAt);
 
   const handleGrantAccess = async () => {
     if (!viewerAddress) {
       toast.error('Enter an auditor wallet address');
       return;
     }
+    if (!isAddress(viewerAddress)) {
+      toast.error('Enter a valid auditor wallet address');
+      return;
+    }
+    if (!address || !publicClient || !hasContractConfig) {
+      toast.error('Connect your wallet and configure the contract first');
+      return;
+    }
+    if (!balanceHandle || balanceHandle === ('0x' + '0'.repeat(64))) {
+      toast.error('This wallet does not have an encrypted balance handle to share yet');
+      return;
+    }
 
     try {
-      const durationSeconds = BigInt(parseInt(accessDuration) * 3600);
-      const demoHandle = '0x' + '0'.repeat(64) as `0x${string}`;
+      const durationSeconds = BigInt(parseInt(accessDuration, 10) * 3600);
 
-      grantAccess({
+      const hash = await writeContractAsync({
         address: CONTRACTS.NOXPAY as `0x${string}`,
         abi: NOXPAY_ABI,
         functionName: 'grantViewAccess',
         args: [
           viewerAddress as `0x${string}`,
           durationSeconds,
-          demoHandle,
+          balanceHandle,
         ],
         ...contractConfig,
       });
+      await publicClient.waitForTransactionReceipt({ hash });
 
-      toast.success('View access granted! 🔓');
+      toast.success('View access granted');
       setViewerAddress('');
-    } catch {
+    } catch (error) {
+      console.error('Grant access error:', error);
       toast.error('Failed to grant access');
     }
   };
 
   const handleRevokeAccess = async (grantId: number) => {
+    if (!publicClient || !hasContractConfig) {
+      toast.error('Configure the contract before revoking access');
+      return;
+    }
+
     try {
-      revokeAccess({
+      const hash = await writeContractAsync({
         address: CONTRACTS.NOXPAY as `0x${string}`,
         abi: NOXPAY_ABI,
         functionName: 'revokeViewAccess',
         args: [BigInt(grantId)],
         ...contractConfig,
       });
+      await publicClient.waitForTransactionReceipt({ hash });
 
       toast.success('Access revoked');
-    } catch {
+    } catch (error) {
+      console.error('Revoke access error:', error);
       toast.error('Failed to revoke access');
     }
   };
@@ -77,7 +147,6 @@ export function SelectiveDisclosure() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.3 }}
     >
-      {/* Collapsible header */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-3 mb-4 group cursor-pointer w-full text-left"
@@ -110,7 +179,6 @@ export function SelectiveDisclosure() {
           exit={{ opacity: 0, height: 0 }}
           className="space-y-4"
         >
-          {/* Grant new access */}
           <div className="glass-card p-6 max-w-2xl">
             <div className="flex items-center gap-2 mb-4">
               <UserPlus className="w-5 h-5 text-nox-cyan" />
@@ -120,9 +188,15 @@ export function SelectiveDisclosure() {
             </div>
 
             <p className="text-sm text-nox-lightgray mb-4">
-              Allow an auditor or compliance officer to temporarily view your encrypted
-              balance and transaction details via the Nox ACL system.
+              This uses the connected wallet&apos;s current confidential balance handle from NoxPay instead of a placeholder.
             </p>
+
+            <div className="mb-4 rounded-xl border border-nox-cyan/10 bg-nox-cyan/5 p-3">
+              <p className="text-xs text-nox-cyan flex items-start gap-2">
+                <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                Revocation is tracked in NoxPay and also attempts a token-side ACL revoke when the underlying token supports it.
+              </p>
+            </div>
 
             <div className="space-y-3">
               <div>
@@ -153,9 +227,9 @@ export function SelectiveDisclosure() {
                           : 'text-nox-lightgray border border-nox-border hover:border-nox-cyan/30'
                       }`}
                     >
-                      {parseInt(hours) < 24
+                      {parseInt(hours, 10) < 24
                         ? `${hours}h`
-                        : `${parseInt(hours) / 24}d`}
+                        : `${parseInt(hours, 10) / 24}d`}
                     </button>
                   ))}
                 </div>
@@ -163,10 +237,10 @@ export function SelectiveDisclosure() {
 
               <button
                 onClick={handleGrantAccess}
-                disabled={isGranting || !address}
+                disabled={isPending || !address || !hasContractConfig}
                 className="btn-cyan w-full flex items-center justify-center gap-2 py-3"
               >
-                {isGranting ? (
+                {isPending ? (
                   <><Loader2 className="w-4 h-4 animate-spin" /> Granting...</>
                 ) : (
                   <><Shield className="w-4 h-4" /> Grant Temporary Access</>
@@ -175,13 +249,16 @@ export function SelectiveDisclosure() {
             </div>
           </div>
 
-          {/* Active Grants */}
-          {activeGrants.length > 0 && (
-            <div className="glass-card p-6 max-w-2xl">
-              <h3 className="text-base font-semibold text-white mb-4">
-                Active Access Grants
-              </h3>
+          <div className="glass-card p-6 max-w-2xl">
+            <h3 className="text-base font-semibold text-white mb-4">
+              Active Access Grants
+            </h3>
 
+            {activeGrants.length === 0 ? (
+              <p className="text-sm text-nox-lightgray">
+                No active grants found for this wallet.
+              </p>
+            ) : (
               <div className="space-y-3">
                 {activeGrants.map((grant) => (
                   <div
@@ -195,22 +272,22 @@ export function SelectiveDisclosure() {
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium text-white">
-                            {grant.label}
+                            Auditor
                           </span>
                           <span className="text-[10px] font-mono text-nox-lightgray">
-                            {grant.viewer}
+                            {shortenAddress(grant.viewer)}
                           </span>
                         </div>
                         <span className="text-xs text-nox-lightgray flex items-center gap-1">
                           <Clock className="w-3 h-3" />
-                          Expires: {grant.expiresAt}
+                          Expires: {new Date(grant.expiresAt * 1000).toLocaleString()}
                         </span>
                       </div>
                     </div>
 
                     <button
                       onClick={() => handleRevokeAccess(grant.id)}
-                      disabled={isRevoking}
+                      disabled={isPending}
                       className="p-2 text-nox-lightgray hover:text-red-400 transition-colors cursor-pointer"
                       title="Revoke Access"
                     >
@@ -219,8 +296,8 @@ export function SelectiveDisclosure() {
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </motion.div>
       )}
     </motion.section>

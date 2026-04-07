@@ -10,16 +10,18 @@ async function main() {
 
   // ─── Configuration ────────────────────────────────────────
   // Replace with actual Confidential Token wrapper address on Arbitrum Sepolia
-  const CONFIDENTIAL_TOKEN_ADDRESS = process.env.CONFIDENTIAL_TOKEN_ADDRESS || "0x0000000000000000000000000000000000000001";
+  const CONFIDENTIAL_TOKEN_ADDRESS = process.env.CONFIDENTIAL_TOKEN_ADDRESS || process.env.NOX_CONFIDENTIAL_TOKEN_FACTORY || "0x0000000000000000000000000000000000000001";
+  const UNDERLYING_TOKEN_ADDRESS = process.env.UNDERLYING_TOKEN_ADDRESS || process.env.VITE_UNDERLYING_TOKEN_ADDRESS || "0x0000000000000000000000000000000000000000";
   const TREASURY_ADDRESS = process.env.TREASURY_ADDRESS || deployer.address;
 
   console.log("Confidential Token:", CONFIDENTIAL_TOKEN_ADDRESS);
+  console.log("Underlying Token:", UNDERLYING_TOKEN_ADDRESS);
   console.log("Treasury Address:", TREASURY_ADDRESS);
   console.log("");
 
   // ─── Deploy NoxPay ────────────────────────────────────────
   const NoxPay = await hre.ethers.getContractFactory("NoxPay");
-  const noxpay = await NoxPay.deploy(CONFIDENTIAL_TOKEN_ADDRESS, TREASURY_ADDRESS);
+  const noxpay = await NoxPay.deploy(CONFIDENTIAL_TOKEN_ADDRESS, UNDERLYING_TOKEN_ADDRESS, TREASURY_ADDRESS);
   await noxpay.waitForDeployment();
 
   const noxpayAddress = await noxpay.getAddress();
@@ -32,6 +34,7 @@ async function main() {
   console.log("═══════════════════════════════════════");
   console.log(`NoxPay Contract:     ${noxpayAddress}`);
   console.log(`Confidential Token:  ${CONFIDENTIAL_TOKEN_ADDRESS}`);
+  console.log(`Underlying Token:    ${UNDERLYING_TOKEN_ADDRESS}`);
   console.log(`Treasury:            ${TREASURY_ADDRESS}`);
   console.log(`Network:             ${(await deployer.provider.getNetwork()).name}`);
   console.log(`Chain ID:            ${(await deployer.provider.getNetwork()).chainId}`);

@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Shield, ArrowDownUp, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { useAccount, usePublicClient, useWriteContract } from 'wagmi';
 import { parseUnits } from 'viem';
-import { CONTRACTS, NOXPAY_ABI, ERC20_ABI } from '../config/contracts';
+import { CONTRACTS, NOXPAY_ABI, ERC20_ABI, ZERO_ADDRESS } from '../config/contracts';
 import { useContractConfig } from '../hooks/useContractConfig';
+import { useTokenMetadata } from '../hooks/useTokenMetadata';
 import toast from 'react-hot-toast';
 
 export function ShieldTokens() {
@@ -12,53 +13,55 @@ export function ShieldTokens() {
   const [amount, setAmount] = useState('');
   const [step, setStep] = useState<'idle' | 'approving' | 'shielding' | 'done'>('idle');
   const contractConfig = useContractConfig();
+  const publicClient = usePublicClient();
+  const { decimals, symbol, hasTokenConfig } = useTokenMetadata();
+  const hasContractConfig =
+    CONTRACTS.NOXPAY !== ZERO_ADDRESS && CONTRACTS.UNDERLYING_TOKEN !== ZERO_ADDRESS;
 
-  const { writeContract: approve, data: approveHash } = useWriteContract();
-  const { writeContract: shield, data: shieldHash } = useWriteContract();
-
-  const { isLoading: isApproving } = useWaitForTransactionReceipt({
-    hash: approveHash,
-  });
-
-  const { isLoading: isShielding } = useWaitForTransactionReceipt({
-    hash: shieldHash,
-  });
+  const { writeContractAsync: writeContractAsync, isPending } = useWriteContract();
 
   const handleShield = async () => {
     if (!amount || parseFloat(amount) <= 0) {
       toast.error('Enter a valid amount');
       return;
     }
+    if (!address || !publicClient || !hasContractConfig || !hasTokenConfig) {
+      toast.error('Configure the token and contract addresses before shielding.');
+      return;
+    }
 
     try {
+      const parsedAmount = parseUnits(amount, decimals);
       setStep('approving');
 
       // Step 1: Approve ERC-20 spending
-      approve({
+      const approveHash = await writeContractAsync({
         address: CONTRACTS.UNDERLYING_TOKEN as `0x${string}`,
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [CONTRACTS.NOXPAY as `0x${string}`, parseUnits(amount, 18)],
+        args: [CONTRACTS.NOXPAY as `0x${string}`, parsedAmount],
         ...contractConfig,
       });
+      await publicClient.waitForTransactionReceipt({ hash: approveHash });
 
-      toast.success('Approval submitted! Now shielding...');
+      toast.success('Approval confirmed. Shielding tokens...');
       setStep('shielding');
 
       // Step 2: Shield (wrap into confidential token)
-      shield({
+      const shieldHash = await writeContractAsync({
         address: CONTRACTS.NOXPAY as `0x${string}`,
         abi: NOXPAY_ABI,
         functionName: 'shieldTokens',
-        args: [parseUnits(amount, 18)],
+        args: [parsedAmount],
         ...contractConfig,
       });
+      await publicClient.waitForTransactionReceipt({ hash: shieldHash });
 
       setStep('done');
-      toast.success(`Successfully shielded ${amount} tokens! 🛡️`);
+      toast.success(`Successfully shielded ${amount} ${symbol}.`);
     } catch (err: unknown) {
       console.error('Shield error:', err);
-      toast.error('Transaction failed. Check console for details.');
+      toast.error('Shielding failed. Check your wallet or console for details.');
       setStep('idle');
     }
   };
@@ -114,7 +117,7 @@ export function ShieldTokens() {
                 step="0.01"
               />
               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-nox-lightgray text-sm font-medium">
-                USDC
+                {symbol}
               </span>
             </div>
           </div>
@@ -138,13 +141,13 @@ export function ShieldTokens() {
               <StepIndicator
                 active={step === 'approving'}
                 completed={step === 'shielding' || step === 'done'}
-                loading={isApproving}
+                loading={isPending && step === 'approving'}
                 label="Approve ERC-20 spending"
               />
               <StepIndicator
                 active={step === 'shielding'}
                 completed={step === 'done'}
-                loading={isShielding}
+                loading={isPending && step === 'shielding'}
                 label="Shield tokens into confidential wrapper"
               />
               <StepIndicator
@@ -159,7 +162,7 @@ export function ShieldTokens() {
           {/* Shield Button */}
           <button
             onClick={handleShield}
-            disabled={!amount || step === 'approving' || step === 'shielding' || !address}
+            disabled={!amount || step === 'approving' || step === 'shielding' || !address || !hasContractConfig}
             className="btn-gold w-full flex items-center justify-center gap-2 text-base py-3.5"
           >
             {step === 'approving' || step === 'shielding' ? (
@@ -183,6 +186,11 @@ export function ShieldTokens() {
           {!address && (
             <p className="text-center text-sm text-nox-lightgray">
               Connect your wallet to shield tokens
+            </p>
+          )}
+          {address && !hasContractConfig && (
+            <p className="text-center text-sm text-nox-lightgray">
+              Add valid token and contract addresses to enable shielding.
             </p>
           )}
         </div>

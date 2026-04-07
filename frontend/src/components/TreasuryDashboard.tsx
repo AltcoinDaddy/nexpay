@@ -4,10 +4,16 @@ import {
   Landmark, Send, Users as UsersIcon, Plus, Trash2, Loader2,
   Clock, CalendarDays
 } from 'lucide-react';
-import { useAccount, useWriteContract } from 'wagmi';
-import { parseUnits } from 'viem';
-import { CONTRACTS, NOXPAY_ABI } from '../config/contracts';
+import { useAccount, usePublicClient, useWriteContract } from 'wagmi';
+import { isAddress, parseUnits } from 'viem';
+import {
+  CONTRACTS,
+  DEMO_CONFIDENTIAL_FLOWS_ENABLED,
+  NOXPAY_ABI,
+  ZERO_ADDRESS,
+} from '../config/contracts';
 import { useContractConfig } from '../hooks/useContractConfig';
+import { useTokenMetadata } from '../hooks/useTokenMetadata';
 import toast from 'react-hot-toast';
 
 interface Recipient {
@@ -34,14 +40,40 @@ export function TreasuryDashboard() {
   const [vestingAmount, setVestingAmount] = useState('');
   const [vestingDays, setVestingDays] = useState('30');
   const contractConfig = useContractConfig();
+  const publicClient = usePublicClient();
+  const { decimals, symbol } = useTokenMetadata();
+  const hasContractConfig = CONTRACTS.NOXPAY !== ZERO_ADDRESS;
 
-  const { writeContract: sendReward, isPending: isSending } = useWriteContract();
-  const { writeContract: sendBatch, isPending: isBatchSending } = useWriteContract();
-  const { writeContract: createVesting, isPending: isCreatingVesting } = useWriteContract();
+  const { writeContractAsync: writeContractAsync, isPending } = useWriteContract();
+
+  const confidentialFlowsEnabled = DEMO_CONFIDENTIAL_FLOWS_ENABLED;
+
+  const ensureConfidentialFlowsReady = () => {
+    if (!confidentialFlowsEnabled) {
+      toast.error('Live confidential transfers need a real Nox SDK payload. Enable demo mode only if you intentionally want placeholder handles.');
+      return false;
+    }
+    if (!address || !publicClient || !hasContractConfig) {
+      toast.error('Connect your wallet and configure the NoxPay contract first.');
+      return false;
+    }
+    return true;
+  };
 
   const handleSendSingle = async () => {
     if (!recipientAddr || !paymentAmount) {
       toast.error('Please fill in all fields');
+      return;
+    }
+    if (!isAddress(recipientAddr)) {
+      toast.error('Enter a valid recipient address');
+      return;
+    }
+    if (parseFloat(paymentAmount) <= 0) {
+      toast.error('Enter a valid amount');
+      return;
+    }
+    if (!ensureConfidentialFlowsReady()) {
       return;
     }
 
@@ -51,7 +83,7 @@ export function TreasuryDashboard() {
       const demoHandle = '0x' + '0'.repeat(64) as `0x${string}`;
       const demoProof = '0x' as `0x${string}`;
 
-      sendReward({
+      const hash = await writeContractAsync({
         address: CONTRACTS.NOXPAY as `0x${string}`,
         abi: NOXPAY_ABI,
         functionName: 'sendConfidentialReward',
@@ -59,15 +91,17 @@ export function TreasuryDashboard() {
           recipientAddr as `0x${string}`,
           demoHandle,
           demoProof,
-          parseUnits(paymentAmount, 18),
+          parseUnits(paymentAmount, decimals),
         ],
         ...contractConfig,
       });
+      await publicClient!.waitForTransactionReceipt({ hash });
 
-      toast.success('Confidential reward sent! 🔒');
+      toast.success('Confidential reward transaction confirmed.');
       setRecipientAddr('');
       setPaymentAmount('');
-    } catch {
+    } catch (error) {
+      console.error('Single reward error:', error);
       toast.error('Transaction failed');
     }
   };
@@ -78,24 +112,37 @@ export function TreasuryDashboard() {
       toast.error('Add at least one recipient');
       return;
     }
+    if (validRecipients.some((recipient) => !isAddress(recipient.address))) {
+      toast.error('Every recipient row needs a valid wallet address');
+      return;
+    }
+    if (validRecipients.some((recipient) => parseFloat(recipient.amount) <= 0)) {
+      toast.error('Every recipient row needs a valid amount');
+      return;
+    }
+    if (!ensureConfidentialFlowsReady()) {
+      return;
+    }
 
     try {
       const addresses = validRecipients.map(r => r.address as `0x${string}`);
       const handles = validRecipients.map(() => ('0x' + '0'.repeat(64)) as `0x${string}`);
       const proofs = validRecipients.map(() => '0x' as `0x${string}`);
-      const amounts = validRecipients.map(r => parseUnits(r.amount, 18));
+      const amounts = validRecipients.map(r => parseUnits(r.amount, decimals));
 
-      sendBatch({
+      const hash = await writeContractAsync({
         address: CONTRACTS.NOXPAY as `0x${string}`,
         abi: NOXPAY_ABI,
         functionName: 'sendBatchRewards',
         args: [addresses, handles, proofs, amounts],
         ...contractConfig,
       });
+      await publicClient!.waitForTransactionReceipt({ hash });
 
-      toast.success(`Batch payment sent to ${validRecipients.length} recipients! 🎉`);
+      toast.success(`Batch payment confirmed for ${validRecipients.length} recipients.`);
       setBatchRecipients([{ id: '1', address: '', amount: '' }]);
-    } catch {
+    } catch (error) {
+      console.error('Batch reward error:', error);
       toast.error('Batch transaction failed');
     }
   };
@@ -105,13 +152,24 @@ export function TreasuryDashboard() {
       toast.error('Please fill in all vesting fields');
       return;
     }
+    if (!isAddress(vestingAddr)) {
+      toast.error('Enter a valid recipient address');
+      return;
+    }
+    if (parseFloat(vestingAmount) <= 0 || parseInt(vestingDays, 10) <= 0) {
+      toast.error('Enter a valid amount and duration');
+      return;
+    }
+    if (!ensureConfidentialFlowsReady()) {
+      return;
+    }
 
     try {
       const demoHandle = '0x' + '0'.repeat(64) as `0x${string}`;
       const demoProof = '0x' as `0x${string}`;
       const durationSeconds = BigInt(parseInt(vestingDays) * 86400);
 
-      createVesting({
+      const hash = await writeContractAsync({
         address: CONTRACTS.NOXPAY as `0x${string}`,
         abi: NOXPAY_ABI,
         functionName: 'createVestingSchedule',
@@ -119,17 +177,19 @@ export function TreasuryDashboard() {
           vestingAddr as `0x${string}`,
           demoHandle,
           demoProof,
-          parseUnits(vestingAmount, 18),
+          parseUnits(vestingAmount, decimals),
           durationSeconds,
         ],
         ...contractConfig,
       });
+      await publicClient!.waitForTransactionReceipt({ hash });
 
-      toast.success('Vesting schedule created! ⏳');
+      toast.success('Vesting schedule transaction confirmed.');
       setVestingAddr('');
       setVestingAmount('');
       setVestingDays('30');
-    } catch {
+    } catch (error) {
+      console.error('Vesting creation error:', error);
       toast.error('Vesting creation failed');
     }
   };
@@ -176,6 +236,17 @@ export function TreasuryDashboard() {
           </p>
         </div>
       </div>
+
+      {!confidentialFlowsEnabled && (
+        <div className="mb-6 rounded-xl border border-nox-warning/20 bg-nox-warning/5 p-4">
+          <p className="text-sm text-nox-lightgray">
+            Treasury transfers and vesting need real encrypted inputs from the Nox SDK.
+            This repo now blocks fake success states by default. Set
+            <code className="mx-1">VITE_ENABLE_DEMO_CONFIDENTIAL_FLOWS=true</code>
+            only if you intentionally want placeholder handles for demos.
+          </p>
+        </div>
+      )}
 
       {/* Mode Tabs */}
       <div className="flex gap-2 mb-6 overflow-x-auto">
@@ -244,7 +315,7 @@ export function TreasuryDashboard() {
                     step="0.01"
                   />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-nox-lightgray text-sm">
-                    USDC
+                    {symbol}
                   </span>
                 </div>
               </div>
@@ -258,10 +329,10 @@ export function TreasuryDashboard() {
 
               <button
                 onClick={handleSendSingle}
-                disabled={isSending || !address}
+                disabled={isPending || !address || !hasContractConfig || !confidentialFlowsEnabled}
                 className="btn-gold w-full flex items-center justify-center gap-2 py-3.5"
               >
-                {isSending ? (
+                {isPending ? (
                   <><Loader2 className="w-5 h-5 animate-spin" /> Sending...</>
                 ) : (
                   <><Send className="w-5 h-5" /> Send Confidential Reward</>
@@ -348,16 +419,16 @@ export function TreasuryDashboard() {
                 Total ({batchRecipients.filter(r => r.amount).length} recipients)
               </span>
               <span className="font-mono font-bold text-nox-gold">
-                ${batchTotal} USDC
+                ${batchTotal} {symbol}
               </span>
             </div>
 
             <button
               onClick={handleSendBatch}
-              disabled={isBatchSending || !address}
+              disabled={isPending || !address || !hasContractConfig || !confidentialFlowsEnabled}
               className="btn-gold w-full flex items-center justify-center gap-2 py-3.5"
             >
-              {isBatchSending ? (
+              {isPending ? (
                 <><Loader2 className="w-5 h-5 animate-spin" /> Processing...</>
               ) : (
                 <><UsersIcon className="w-5 h-5" /> Send Batch Rewards</>
@@ -410,7 +481,7 @@ export function TreasuryDashboard() {
                       min="0"
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-nox-lightgray text-xs">
-                      USDC
+                      {symbol}
                     </span>
                   </div>
                 </div>
@@ -467,10 +538,10 @@ export function TreasuryDashboard() {
 
               <button
                 onClick={handleCreateVesting}
-                disabled={isCreatingVesting || !address}
+                disabled={isPending || !address || !hasContractConfig || !confidentialFlowsEnabled}
                 className="btn-gold w-full flex items-center justify-center gap-2 py-3.5"
               >
-                {isCreatingVesting ? (
+                {isPending ? (
                   <><Loader2 className="w-5 h-5 animate-spin" /> Creating...</>
                 ) : (
                   <><Clock className="w-5 h-5" /> Create Vesting Schedule</>

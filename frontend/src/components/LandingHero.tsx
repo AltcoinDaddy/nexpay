@@ -5,11 +5,7 @@ import {
   Users, BarChart3, KeyRound
 } from 'lucide-react';
 
-interface LandingHeroProps {
-  onConnect: () => void;
-}
-
-export function LandingHero({ onConnect: _onConnect }: LandingHeroProps) {
+export function LandingHero() {
   return (
     <div className="pt-8 sm:pt-16 pb-16">
       {/* Hero Section */}

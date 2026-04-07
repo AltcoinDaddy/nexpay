@@ -30,7 +30,7 @@ function App() {
 
         <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-20">
           {!isConnected || activeView === 'landing' ? (
-            <LandingHero onConnect={() => setActiveView('recipient')} />
+            <LandingHero />
           ) : activeView === 'treasury' ? (
             <div className="space-y-8 pt-8">
               <PublicStats />

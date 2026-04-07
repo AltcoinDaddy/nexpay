@@ -15,6 +15,11 @@ export const CONTRACTS = {
   UNDERLYING_TOKEN: import.meta.env.VITE_UNDERLYING_TOKEN_ADDRESS || '0x0000000000000000000000000000000000000000',
 } as const;
 
+export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
+
+export const DEMO_CONFIDENTIAL_FLOWS_ENABLED =
+  import.meta.env.VITE_ENABLE_DEMO_CONFIDENTIAL_FLOWS === 'true';
+
 // ─── NoxPay ABI (simplified for frontend interaction) ──────
 export const NOXPAY_ABI = [
   // View functions
@@ -100,6 +105,28 @@ export const NOXPAY_ABI = [
       { name: 'grantId', type: 'uint256' },
     ],
     outputs: [{ name: 'hasAccess', type: 'bool' }],
+  },
+  {
+    name: 'viewAccessGrantCount',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: '', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    name: 'viewAccessGrants',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: '', type: 'address' },
+      { name: '', type: 'uint256' },
+    ],
+    outputs: [
+      { name: 'viewer', type: 'address' },
+      { name: 'expiresAt', type: 'uint256' },
+      { name: 'active', type: 'bool' },
+      { name: 'balanceHandle', type: 'bytes32' },
+    ],
   },
   // Write functions
   {

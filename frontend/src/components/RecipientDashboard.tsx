@@ -1,70 +1,114 @@
-import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   EyeOff, Lock, Unlock, Download, RefreshCw,
-  ArrowDownRight, Clock, CheckCircle2, Loader2
+  Clock, Info
 } from 'lucide-react';
-import { useAccount } from 'wagmi';
+import { formatUnits } from 'viem';
+import { useAccount, useReadContract, useReadContracts } from 'wagmi';
+import { CONTRACTS, NOXPAY_ABI, ZERO_ADDRESS } from '../config/contracts';
+import { useTokenMetadata } from '../hooks/useTokenMetadata';
+
+function formatCurrencyAmount(value: bigint, decimals: number) {
+  return Number(formatUnits(value, decimals)).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function shortHandle(handle?: string) {
+  if (!handle) return 'No encrypted balance yet';
+  return `${handle.slice(0, 10)}...${handle.slice(-8)}`;
+}
 
 export function RecipientDashboard() {
   const { address } = useAccount();
-  const [isDecrypting, setIsDecrypting] = useState(false);
-  const [isDecrypted, setIsDecrypted] = useState(false);
-  const [decryptedBalance, setDecryptedBalance] = useState('');
+  const { decimals, symbol } = useTokenMetadata();
+  const hasContractConfig = CONTRACTS.NOXPAY !== ZERO_ADDRESS;
 
-  // Simulated transaction history (in production, fetched from events + decrypted via Nox SDK)
-  const [txHistory] = useState([
-    {
-      id: 1,
-      from: '0x742d...4c2f',
-      encryptedAmount: '🔒 Encrypted',
-      decryptedAmount: '$2,500.00',
-      timestamp: '2026-04-05 14:32',
-      type: 'reward',
-    },
-    {
-      id: 2,
-      from: '0x742d...4c2f',
-      encryptedAmount: '🔒 Encrypted',
-      decryptedAmount: '$1,750.00',
-      timestamp: '2026-04-01 09:15',
-      type: 'reward',
-    },
-    {
-      id: 3,
-      from: '0x742d...4c2f',
-      encryptedAmount: '🔒 Encrypted',
-      decryptedAmount: '$5,000.00',
-      timestamp: '2026-03-28 16:45',
-      type: 'vesting',
-    },
-  ]);
+  const { data: balanceHandle } = useReadContract({
+    address: CONTRACTS.NOXPAY as `0x${string}`,
+    abi: NOXPAY_ABI,
+    functionName: 'getConfidentialBalance',
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(address && hasContractConfig) },
+  });
 
-  // Simulate decryption via Nox JS SDK
-  const handleDecrypt = async () => {
-    setIsDecrypting(true);
+  const { data: paymentCountData } = useReadContract({
+    address: CONTRACTS.NOXPAY as `0x${string}`,
+    abi: NOXPAY_ABI,
+    functionName: 'recipientPaymentCount',
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(address && hasContractConfig) },
+  });
 
-    // In production:
-    // const handleClient = await createViemHandleClient(walletClient);
-    // const balance = await handleClient.decrypt(balanceHandle);
-    await new Promise(resolve => setTimeout(resolve, 2000));
+  const { data: vestingCountData } = useReadContract({
+    address: CONTRACTS.NOXPAY as `0x${string}`,
+    abi: NOXPAY_ABI,
+    functionName: 'vestingScheduleCount',
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(address && hasContractConfig) },
+  });
 
-    setDecryptedBalance('8,750.00');
-    setIsDecrypted(true);
-    setIsDecrypting(false);
-  };
+  const scheduleIndexes = Array.from(
+    { length: Math.min(Number(vestingCountData ?? 0n), 5) },
+    (_, index) => BigInt(index)
+  );
 
-  // Vesting schedules
-  const vestingSchedules = [
-    {
-      id: 0,
-      total: '$5,000.00',
-      claimed: '$1,200.00',
-      progress: 24,
-      daysLeft: 22,
-      startDate: '2026-03-15',
-    },
-  ];
+  const { data: vestingScheduleData } = useReadContracts({
+    contracts: address
+      ? scheduleIndexes.map((scheduleId) => ({
+          address: CONTRACTS.NOXPAY as `0x${string}`,
+          abi: NOXPAY_ABI,
+          functionName: 'vestingSchedules',
+          args: [address, scheduleId],
+        }))
+      : [],
+    query: { enabled: Boolean(address && scheduleIndexes.length > 0 && hasContractConfig) },
+  });
+
+  const { data: vestedAmountData } = useReadContracts({
+    contracts: address
+      ? scheduleIndexes.map((scheduleId) => ({
+          address: CONTRACTS.NOXPAY as `0x${string}`,
+          abi: NOXPAY_ABI,
+          functionName: 'getVestedAmount',
+          args: [address, scheduleId],
+        }))
+      : [],
+    query: { enabled: Boolean(address && scheduleIndexes.length > 0 && hasContractConfig) },
+  });
+
+  const vestingSchedules = scheduleIndexes
+    .map((scheduleId, index) => {
+      const rawSchedule = vestingScheduleData?.[index]?.result;
+      if (!rawSchedule) {
+        return null;
+      }
+
+      const vestedAmount = (vestedAmountData?.[index]?.result as bigint | undefined) ?? 0n;
+      const totalAmount = rawSchedule[0] as bigint;
+      const claimedAmount = rawSchedule[1] as bigint;
+      const startTime = Number(rawSchedule[2]);
+      const duration = Number(rawSchedule[3]);
+      const isActive = Boolean(rawSchedule[5]);
+      const progress = totalAmount === 0n ? 0 : Number((vestedAmount * 100n) / totalAmount);
+      const endTime = startTime + duration;
+      const daysLeft = Math.max(Math.ceil((endTime * 1000 - Date.now()) / (1000 * 60 * 60 * 24)), 0);
+
+      return {
+        id: Number(scheduleId),
+        total: formatCurrencyAmount(totalAmount, decimals),
+        claimed: formatCurrencyAmount(claimedAmount, decimals),
+        vested: formatCurrencyAmount(vestedAmount, decimals),
+        progress: Math.min(progress, 100),
+        daysLeft,
+        active: isActive,
+      };
+    })
+    .filter((schedule): schedule is NonNullable<typeof schedule> => schedule !== null);
+
+  const paymentCount = Number(paymentCountData ?? 0n).toLocaleString();
+  const hasEncryptedBalance = balanceHandle && balanceHandle !== ('0x' + '0'.repeat(64));
 
   return (
     <motion.section
@@ -83,7 +127,6 @@ export function RecipientDashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Balance Card */}
         <div className="lg:col-span-1">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
@@ -91,7 +134,6 @@ export function RecipientDashboard() {
             transition={{ duration: 0.4 }}
             className="glass-card p-6 relative overflow-hidden"
           >
-            {/* Cyan glow */}
             <div
               className="absolute inset-0 opacity-5 pointer-events-none"
               style={{
@@ -109,59 +151,40 @@ export function RecipientDashboard() {
                 </div>
               </div>
 
-              {isDecrypted ? (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                >
-                  <p className="text-3xl sm:text-4xl font-bold font-mono text-nox-cyan mb-1">
-                    ${decryptedBalance}
-                  </p>
-                  <p className="text-sm text-nox-lightgray flex items-center gap-1">
-                    <Unlock className="w-3.5 h-3.5 text-nox-cyan" />
-                    Decrypted locally via Nox SDK
-                  </p>
-                </motion.div>
-              ) : (
-                <div className="mb-2">
-                  <p className="text-3xl sm:text-4xl font-bold font-mono text-nox-lightgray/30 mb-1">
-                    $••,•••.••
-                  </p>
-                  <p className="text-sm text-nox-lightgray">
-                    Balance is encrypted on-chain
-                  </p>
-                </div>
-              )}
+              <div className="mb-2">
+                <p className="text-2xl sm:text-3xl font-bold font-mono text-nox-cyan mb-1 break-all">
+                  {hasEncryptedBalance ? shortHandle(balanceHandle) : '$••,•••.••'}
+                </p>
+                <p className="text-sm text-nox-lightgray">
+                  {hasEncryptedBalance
+                    ? 'Encrypted balance handle loaded from the contract.'
+                    : 'No encrypted balance handle found for this wallet yet.'}
+                </p>
+              </div>
 
               <button
-                onClick={handleDecrypt}
-                disabled={isDecrypting || isDecrypted}
-                className={`mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
-                  isDecrypted
-                    ? 'bg-nox-cyan/10 text-nox-cyan border border-nox-cyan/30'
-                    : 'btn-cyan'
-                }`}
+                disabled
+                className="mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold bg-nox-cyan/10 text-nox-cyan border border-nox-cyan/20 opacity-70 cursor-not-allowed"
               >
-                {isDecrypting ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" /> Decrypting via TEE...</>
-                ) : isDecrypted ? (
-                  <><CheckCircle2 className="w-4 h-4" /> Balance Revealed</>
-                ) : (
-                  <><Unlock className="w-4 h-4" /> Decrypt My Balance</>
-                )}
+                <Unlock className="w-4 h-4" />
+                Nox SDK Needed For Decryption
               </button>
 
-              {/* Wallet address */}
-              <div className="mt-4 pt-4 border-t border-nox-border/50">
-                <p className="text-xs text-nox-lightgray">Connected Wallet</p>
-                <p className="text-sm font-mono text-white truncate">
-                  {address || '0x...'}
-                </p>
+              <div className="mt-4 pt-4 border-t border-nox-border/50 space-y-3">
+                <div>
+                  <p className="text-xs text-nox-lightgray">Connected Wallet</p>
+                  <p className="text-sm font-mono text-white truncate">
+                    {address || '0x...'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-nox-lightgray">Payments Recorded</p>
+                  <p className="text-lg font-mono text-white">{paymentCount}</p>
+                </div>
               </div>
             </div>
           </motion.div>
 
-          {/* Vesting Card */}
           {vestingSchedules.length > 0 && (
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
@@ -171,48 +194,56 @@ export function RecipientDashboard() {
             >
               <div className="flex items-center gap-2 mb-4">
                 <Clock className="w-5 h-5 text-nox-gold" />
-                <span className="text-sm font-semibold text-white">Vesting Schedule</span>
+                <span className="text-sm font-semibold text-white">Vesting Schedules</span>
               </div>
 
-              {vestingSchedules.map((schedule) => (
-                <div key={schedule.id}>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-nox-lightgray">Claimed / Total</span>
-                    <span className="font-mono">
-                      <span className="text-nox-success">{schedule.claimed}</span>
-                      <span className="text-nox-lightgray"> / </span>
-                      <span className="text-white">{schedule.total}</span>
-                    </span>
-                  </div>
+              <div className="space-y-5">
+                {vestingSchedules.map((schedule) => (
+                  <div key={schedule.id}>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="text-nox-lightgray">Vested / Total</span>
+                      <span className="font-mono">
+                        <span className="text-nox-success">{symbol} {schedule.vested}</span>
+                        <span className="text-nox-lightgray"> / </span>
+                        <span className="text-white">{symbol} {schedule.total}</span>
+                      </span>
+                    </div>
 
-                  {/* Progress bar */}
-                  <div className="h-3 rounded-full bg-nox-dark overflow-hidden mb-2">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${schedule.progress}%` }}
-                      transition={{ duration: 1, delay: 0.5 }}
-                      className="h-full rounded-full bg-gradient-to-r from-nox-gold to-nox-deepgold relative"
+                    <div className="h-3 rounded-full bg-nox-dark overflow-hidden mb-2">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${schedule.progress}%` }}
+                        transition={{ duration: 1, delay: 0.2 }}
+                        className="h-full rounded-full bg-gradient-to-r from-nox-gold to-nox-deepgold relative"
+                      >
+                        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white shadow-lg" />
+                      </motion.div>
+                    </div>
+
+                    <div className="flex justify-between text-xs text-nox-lightgray mb-4">
+                      <span>{schedule.progress}% vested</span>
+                      <span>{schedule.daysLeft} days remaining</span>
+                    </div>
+
+                    <div className="mb-3 rounded-lg border border-nox-border/40 bg-nox-dark/30 p-3 text-xs text-nox-lightgray">
+                      Claimed so far: {symbol} {schedule.claimed}
+                      {!schedule.active && <span className="ml-2 text-nox-success">Completed</span>}
+                    </div>
+
+                    <button
+                      disabled
+                      className="btn-gold w-full flex items-center justify-center gap-2 py-2.5 text-sm opacity-60 cursor-not-allowed"
                     >
-                      <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white shadow-lg" />
-                    </motion.div>
+                      <Download className="w-4 h-4" />
+                      Claim Requires Encrypted Proof
+                    </button>
                   </div>
-
-                  <div className="flex justify-between text-xs text-nox-lightgray mb-4">
-                    <span>{schedule.progress}% vested</span>
-                    <span>{schedule.daysLeft} days remaining</span>
-                  </div>
-
-                  <button className="btn-gold w-full flex items-center justify-center gap-2 py-2.5 text-sm">
-                    <Download className="w-4 h-4" />
-                    Claim Available
-                  </button>
-                </div>
-              ))}
+                ))}
+              </div>
             </motion.div>
           )}
         </div>
 
-        {/* Transaction History */}
         <div className="lg:col-span-2">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
@@ -222,81 +253,35 @@ export function RecipientDashboard() {
           >
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-semibold text-white">
-                Payment History
+                Private Activity
               </h3>
-              <button className="flex items-center gap-1.5 text-sm text-nox-lightgray hover:text-nox-cyan transition-colors cursor-pointer">
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-sm text-nox-lightgray"
+                disabled
+              >
                 <RefreshCw className="w-4 h-4" />
-                Refresh
+                Live Indexing Pending
               </button>
             </div>
 
-            {/* Privacy notice */}
-            <div className="p-3 rounded-xl bg-nox-cyan/5 border border-nox-cyan/10 mb-5">
-              <p className="text-xs text-nox-cyan flex items-center gap-2">
-                <Lock className="w-3.5 h-3.5 flex-shrink-0" />
-                Only you can see these amounts. They are decrypted locally via the Nox JS SDK.
+            <div className="p-4 rounded-xl bg-nox-cyan/5 border border-nox-cyan/10 mb-5">
+              <p className="text-sm text-nox-cyan flex items-start gap-2">
+                <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                This repo now shows the live encrypted balance handle, payment count, and vesting state from the contract.
+                Full amount decryption and per-transfer history still need the Nox JS SDK plus event indexing.
               </p>
             </div>
 
-            {/* Transactions */}
-            <div className="space-y-3">
-              {txHistory.map((tx, idx) => (
-                <motion.div
-                  key={tx.id}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.3, delay: 0.2 + idx * 0.05 }}
-                  className="flex items-center justify-between p-4 rounded-xl bg-nox-dark/40 border border-nox-border/30 hover:border-nox-cyan/20 transition-colors"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                      tx.type === 'vesting'
-                        ? 'bg-nox-gold/10'
-                        : 'bg-nox-cyan/10'
-                    }`}>
-                      {tx.type === 'vesting' ? (
-                        <Clock className="w-5 h-5 text-nox-gold" />
-                      ) : (
-                        <ArrowDownRight className="w-5 h-5 text-nox-cyan" />
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-white">
-                          {tx.type === 'vesting' ? 'Vesting Payment' : 'Confidential Reward'}
-                        </span>
-                        <span className="privacy-badge text-[10px] !py-0.5 !px-2">
-                          PRIVATE
-                        </span>
-                      </div>
-                      <span className="text-xs text-nox-lightgray">
-                        From: {tx.from} · {tx.timestamp}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="text-right flex-shrink-0 ml-4">
-                    {isDecrypted ? (
-                      <p className="text-base font-mono font-bold text-nox-cyan">
-                        +{tx.decryptedAmount}
-                      </p>
-                    ) : (
-                      <p className="text-base font-mono text-nox-lightgray/30">
-                        {tx.encryptedAmount}
-                      </p>
-                    )}
-                  </div>
-                </motion.div>
-              ))}
+            <div className="rounded-xl border border-nox-border/30 bg-nox-dark/30 p-5">
+              <p className="text-sm text-white mb-2">
+                What is already live
+              </p>
+              <p className="text-sm text-nox-lightgray leading-relaxed">
+                Contract-backed recipient counters and vesting schedules are loaded directly on this screen.
+                Once the Nox SDK is wired in, this panel can decrypt balances and event payloads client-side.
+              </p>
             </div>
-
-            {/* Empty state */}
-            {txHistory.length === 0 && (
-              <div className="text-center py-12">
-                <EyeOff className="w-12 h-12 text-nox-lightgray/20 mx-auto mb-4" />
-                <p className="text-nox-lightgray">No rewards received yet</p>
-              </div>
-            )}
           </motion.div>
         </div>
       </div>

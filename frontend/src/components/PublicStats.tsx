@@ -1,22 +1,36 @@
 import { motion } from 'framer-motion';
 import { BarChart3, Users, Coins, TrendingUp, Eye } from 'lucide-react';
 import { useAccount, useReadContract } from 'wagmi';
-import { CONTRACTS, NOXPAY_ABI } from '../config/contracts';
+import { CONTRACTS, NOXPAY_ABI, ZERO_ADDRESS } from '../config/contracts';
 import { formatUnits } from 'viem';
+import { useTokenMetadata } from '../hooks/useTokenMetadata';
 
 export function PublicStats() {
   const { address } = useAccount();
+  const { decimals } = useTokenMetadata();
+  const hasContractConfig = CONTRACTS.NOXPAY !== ZERO_ADDRESS;
 
   // Read public stats from contract (falls back to demo data if not deployed)
   const { data: statsData } = useReadContract({
     address: CONTRACTS.NOXPAY as `0x${string}`,
     abi: NOXPAY_ABI,
     functionName: 'getPublicStats',
+    query: { enabled: hasContractConfig },
+  });
+
+  const { data: treasuryAddress } = useReadContract({
+    address: CONTRACTS.NOXPAY as `0x${string}`,
+    abi: NOXPAY_ABI,
+    functionName: 'treasury',
+    query: { enabled: hasContractConfig },
   });
 
   // Demo values when contract isn't deployed
   const totalDistributed = statsData
-    ? formatUnits(statsData[0] as bigint, 18)
+    ? Number(formatUnits(statsData[0] as bigint, decimals)).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
     : '142,500.00';
   const paymentCount = statsData
     ? Number(statsData[1]).toLocaleString()
@@ -25,7 +39,15 @@ export function PublicStats() {
     ? Number(statsData[2]).toLocaleString()
     : '12';
 
-  const isTreasury = address?.toLowerCase() === CONTRACTS.NOXPAY?.toLowerCase();
+  const isTreasury = Boolean(
+    address && treasuryAddress && address.toLowerCase() === treasuryAddress.toLowerCase()
+  );
+  const roleLabel = !address ? 'Viewer' : isTreasury ? 'Treasury' : 'Recipient';
+  const roleSubtext = !address
+    ? 'Connect to personalize'
+    : isTreasury
+      ? 'Admin access'
+      : 'View your rewards';
 
   return (
     <motion.section
@@ -73,8 +95,8 @@ export function PublicStats() {
         <StatCard
           icon={<TrendingUp className="w-5 h-5" />}
           label="Your Role"
-          value={isTreasury ? 'Treasury' : 'Recipient'}
-          subtext={isTreasury ? 'Admin access' : 'View your rewards'}
+          value={roleLabel}
+          subtext={roleSubtext}
           accentColor="gold"
           delay={0.15}
         />
