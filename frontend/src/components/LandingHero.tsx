@@ -41,7 +41,7 @@ export function LandingHero() {
 
   const userPaymentCount = paymentCountData ? Number(paymentCountData).toLocaleString() : '0';
   return (
-    <div className="pt-8 sm:pt-16 pb-16">
+    <div className="pt-8 sm:pt-16 pb-16 overflow-x-hidden">
       {/* Hero Section */}
       <section className="text-center max-w-4xl mx-auto mb-20 sm:mb-32">
 
@@ -50,12 +50,11 @@ export function LandingHero() {
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.1 }}
-          className="text-4xl sm:text-5xl md:text-7xl font-black leading-tight mb-6"
+          className="text-3xl sm:text-5xl md:text-7xl font-black leading-tight mb-6 px-2"
         >
-          <span className="gradient-text-gold">Send Rewards</span>
-          <br />
-          <span className="text-white">On-Chain with </span>
-          <span className="gradient-text-cyan">Hidden Amounts</span>
+          <span className="gradient-text-gold block">Send Rewards</span>
+          <span className="text-white block sm:inline">On-Chain with </span>
+          <span className="gradient-text-cyan block sm:inline">Hidden Amounts</span>
         </motion.h1>
 
         {/* Subtitle */}
@@ -63,7 +62,7 @@ export function LandingHero() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
-          className="text-lg sm:text-xl text-nox-lightgray max-w-2xl mx-auto mb-10 leading-relaxed px-4"
+          className="text-base sm:text-xl text-nox-lightgray max-w-2xl mx-auto mb-10 leading-relaxed px-4"
         >
           A confidential payroll and rewards platform for DAOs, protocols, and Web3 teams.
           Individual amounts and balances remain <span className="text-nox-cyan font-semibold">fully encrypted</span> using
@@ -75,16 +74,16 @@ export function LandingHero() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.3 }}
-          className="flex flex-col sm:flex-row items-center justify-center gap-4"
+          className="flex flex-col sm:flex-row items-center justify-center gap-4 px-4"
         >
-          <div className="pulse-gold rounded-xl">
+          <div className="pulse-gold rounded-xl w-full max-w-xs sm:w-auto">
             <ConnectButton label="Connect Wallet to Start" />
           </div>
           <a
             href="https://docs.iex.ec/nox-protocol/getting-started/welcome"
             target="_blank"
             rel="noopener noreferrer"
-            className="btn-outline flex items-center gap-2 text-sm"
+            className="btn-outline flex items-center justify-center gap-2 text-sm w-full max-w-xs sm:w-auto"
           >
             Learn About Nox
             <ArrowRight className="w-4 h-4" />

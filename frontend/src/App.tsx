@@ -17,7 +17,7 @@ function App() {
   const [activeView, setActiveView] = useState<ViewMode>('landing');
 
   return (
-    <div className="min-h-screen relative flex flex-col">
+    <div className="min-h-screen relative flex flex-col overflow-x-hidden">
       {/* Background particles */}
       <div className="bg-particles" />
 

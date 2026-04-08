@@ -1,7 +1,7 @@
-import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { motion } from 'framer-motion';
 import { Landmark, User, Menu, X } from 'lucide-react';
 import { useState } from 'react';
+import { HeaderConnectButton } from './HeaderConnectButton';
 
 type ViewMode = 'landing' | 'treasury' | 'recipient';
 
@@ -25,17 +25,17 @@ export function Header({ activeView, onViewChange, isConnected }: HeaderProps) {
         backdropFilter: 'blur(20px)',
       }}
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 sm:h-20">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between gap-2 h-16 sm:h-20 min-w-0">
           {/* Logo */}
           <button
             onClick={() => onViewChange('landing')}
-            className="flex items-center gap-3 group cursor-pointer"
+            className="flex items-center gap-2 sm:gap-3 group cursor-pointer min-w-0"
           >
             <img 
               src="/noxpay-logo.svg" 
               alt="NoxPay" 
-              className="w-10 h-10 sm:w-12 sm:h-12 shadow-lg group-hover:shadow-nox-gold/20 transition-all group-hover:scale-105" 
+              className="w-9 h-9 sm:w-12 sm:h-12 shrink-0 shadow-lg group-hover:shadow-nox-gold/20 transition-all group-hover:scale-105" 
             />
             <div className="hidden sm:block">
               <h1 className="text-xl font-bold gradient-text-gold leading-none">
@@ -45,9 +45,6 @@ export function Header({ activeView, onViewChange, isConnected }: HeaderProps) {
                 Confidential Rewards
               </p>
             </div>
-            <h1 className="sm:hidden text-lg font-bold gradient-text-gold">
-              NoxPay
-            </h1>
           </button>
 
           {/* Desktop Navigation */}
@@ -69,12 +66,10 @@ export function Header({ activeView, onViewChange, isConnected }: HeaderProps) {
           )}
 
           {/* Connect + Mobile Menu */}
-          <div className="flex items-center gap-3">
-            <ConnectButton
-              showBalance={false}
-              chainStatus="icon"
-              accountStatus={{ smallScreen: 'avatar', largeScreen: 'address' }}
-            />
+          <div className="flex items-center gap-2 shrink-0">
+            <div className={isConnected ? 'block' : 'hidden sm:block'}>
+              <HeaderConnectButton />
+            </div>
             {isConnected && (
               <button
                 className="md:hidden p-2 text-nox-lightgray hover:text-white transition-colors"
