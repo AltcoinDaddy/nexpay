@@ -47,6 +47,83 @@ function getHandleChainId(handle: string) {
   return Number.parseInt(handle.slice(4, 12), 16);
 }
 
+function extractRawErrorMessage(error: unknown) {
+  const err = error as {
+    shortMessage?: string;
+    details?: string;
+    message?: string;
+    cause?: { shortMessage?: string; details?: string; message?: string };
+  };
+
+  return (
+    err?.shortMessage ||
+    err?.details ||
+    err?.cause?.shortMessage ||
+    err?.cause?.details ||
+    err?.message ||
+    err?.cause?.message ||
+    ''
+  );
+}
+
+function cleanErrorMessage(message: string) {
+  return message
+    .replace(/^execution reverted:?\s*/i, '')
+    .replace(/^reverted with reason string\s*/i, '')
+    .replace(/^Error:\s*/i, '')
+    .replace(/^["']|["']$/g, '')
+    .trim();
+}
+
+function getDecryptErrorMessage(error: unknown) {
+  const rawMessage = extractRawErrorMessage(error);
+  const lower = rawMessage.toLowerCase();
+  const cleaned = cleanErrorMessage(rawMessage);
+
+  if (!rawMessage) {
+    return 'Decrypt failed. Check the wallet signature prompt and try again.';
+  }
+  if (lower.includes('user rejected')) {
+    return 'Decrypt was cancelled in your wallet.';
+  }
+  if (lower.includes('handle chainid')) {
+    return 'Decrypt failed because this balance handle was not created for Arbitrum Sepolia.';
+  }
+  if (lower.includes('not allowed') || lower.includes('viewer') || lower.includes('acl')) {
+    return 'Decrypt failed because this wallet does not currently have permission to view that handle.';
+  }
+  if (lower.includes('unsupported chain') || lower.includes('chain mismatch')) {
+    return 'Decrypt failed because the wallet is not connected to the expected Arbitrum Sepolia chain.';
+  }
+
+  return cleaned.length > 0 && cleaned.length <= 220
+    ? `Decrypt failed: ${cleaned}`
+    : 'Decrypt failed. Open the browser console for the full SDK or RPC error.';
+}
+
+function getClaimErrorMessage(error: unknown) {
+  const rawMessage = extractRawErrorMessage(error);
+  const lower = rawMessage.toLowerCase();
+  const cleaned = cleanErrorMessage(rawMessage);
+
+  if (!rawMessage) {
+    return 'Claim failed. Check the wallet prompt and try again.';
+  }
+  if (lower.includes('user rejected')) {
+    return 'Claim was cancelled in your wallet.';
+  }
+  if (lower.includes('nothingtoclaim')) {
+    return 'Claim failed because there is nothing vested to claim yet.';
+  }
+  if (lower.includes('vestingnotactive')) {
+    return 'Claim failed because this vesting schedule is no longer active.';
+  }
+
+  return cleaned.length > 0 && cleaned.length <= 220
+    ? `Claim failed: ${cleaned}`
+    : 'Claim failed. Open the browser console to inspect the full revert reason.';
+}
+
 export function RecipientDashboard() {
   const { address } = useAccount();
   const { data: walletClient } = useWalletClient();
@@ -164,7 +241,7 @@ export function RecipientDashboard() {
       toast.success('Balance decrypted locally via TEE!');
     } catch (e) {
       console.error('Decryption failed:', e);
-      toast.error('Failed to decrypt balance');
+      toast.error(getDecryptErrorMessage(e));
     } finally {
       setIsDecrypting(false);
     }
@@ -203,7 +280,7 @@ export function RecipientDashboard() {
       toast.success('Successfully claimed vested tokens!');
     } catch (e) {
       console.error('Claiming failed:', e);
-      toast.error('Failed to claim vested tokens');
+      toast.error(getClaimErrorMessage(e));
     } finally {
       setClaimingId(null);
     }
