@@ -7,21 +7,10 @@ import { arbitrumSepolia } from 'wagmi/chains';
 import { CONTRACTS, NOXPAY_ABI, ZERO_ADDRESS } from '../config/contracts';
 import { useContractConfig } from '../hooks/useContractConfig';
 import toast from 'react-hot-toast';
+import { getHandleChainId } from '../utils/noxHandleCompat';
 
 function shortenAddress(address: string) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
-
-function isHexHandle(handle: string) {
-  return /^0x[0-9a-fA-F]{64}$/.test(handle);
-}
-
-function getHandleChainId(handle: string) {
-  if (!isHexHandle(handle)) {
-    return null;
-  }
-
-  return Number.parseInt(handle.slice(4, 12), 16);
 }
 
 export function SelectiveDisclosure() {
@@ -212,7 +201,7 @@ export function SelectiveDisclosure() {
             {balanceHandle && !hasValidBalanceHandle && (
               <div className="mb-4 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3">
                 <p className="text-xs text-amber-200">
-                  The current balance handle is not a valid Arbitrum Sepolia handle. It reports chain {handleChainId ?? 'unknown'} instead of {arbitrumSepolia.id}, so it cannot be shared or decrypted safely.
+                  The current balance handle points to chain {handleChainId ?? 'unknown'} instead of Arbitrum Sepolia ({arbitrumSepolia.id}), so it cannot be shared or decrypted safely from this wallet session.
                 </p>
               </div>
             )}

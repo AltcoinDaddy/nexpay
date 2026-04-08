@@ -12,6 +12,11 @@ import { useContractConfig } from '../hooks/useContractConfig';
 import { useState } from 'react';
 import { createViemHandleClient } from '@iexec-nox/handle';
 import toast from 'react-hot-toast';
+import {
+  createCompatHandleClient,
+  decryptHandleCompat,
+  getHandleChainId,
+} from '../utils/noxHandleCompat';
 
 type VestingScheduleResult = readonly [bigint, bigint, bigint, bigint, string, boolean];
 
@@ -33,18 +38,6 @@ function isVestingScheduleResult(value: unknown): value is VestingScheduleResult
 
 function readBigIntResult(value: unknown) {
   return typeof value === 'bigint' ? value : 0n;
-}
-
-function isHexHandle(handle: string) {
-  return /^0x[0-9a-fA-F]{64}$/.test(handle);
-}
-
-function getHandleChainId(handle: string) {
-  if (!isHexHandle(handle)) {
-    return null;
-  }
-
-  return Number.parseInt(handle.slice(4, 12), 16);
 }
 
 function extractRawErrorMessage(error: unknown) {
@@ -88,6 +81,13 @@ function getDecryptErrorMessage(error: unknown) {
   }
   if (lower.includes('handle chainid')) {
     return 'Decrypt failed because this balance handle was not created for Arbitrum Sepolia.';
+  }
+  if (
+    lower.includes('object not found') ||
+    lower.includes('storage error') ||
+    lower.includes('unexpected gateway response 404')
+  ) {
+    return 'Decrypt is not ready yet because the Nox gateway has not indexed this balance handle. Wait a bit and try again.';
   }
   if (lower.includes('not allowed') || lower.includes('viewer') || lower.includes('acl')) {
     return 'Decrypt failed because this wallet does not currently have permission to view that handle.';
@@ -235,8 +235,11 @@ export function RecipientDashboard() {
     }
     try {
       setIsDecrypting(true);
-      const handleClient = await createViemHandleClient(walletClient as any);
-      const { value } = await handleClient.decrypt(balanceHandle as `0x${string}`);
+      const handleClient = await createCompatHandleClient(walletClient);
+      const { value } = await decryptHandleCompat({
+        handleClient,
+        handle: balanceHandle as `0x${string}`,
+      });
       setDecryptedBalance(formatCurrencyAmount(BigInt(value), decimals));
       toast.success('Balance decrypted locally via TEE!');
     } catch (e) {
@@ -364,7 +367,7 @@ export function RecipientDashboard() {
 
               {hasEncryptedBalance && !hasValidEncryptedBalance && (
                 <p className="mt-3 text-xs text-nox-lightgray">
-                  This usually means the stored handle is a placeholder or was created outside the current Arbitrum Sepolia flow, so the Nox SDK rejects it before decryption.
+                  This handle does not match the connected Arbitrum Sepolia chain, so the app blocks decryption before calling the gateway.
                 </p>
               )}
 
