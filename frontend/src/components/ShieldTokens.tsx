@@ -560,6 +560,15 @@ function getShieldErrorMessage(error: unknown, symbol: string) {
   if (lower.includes('insufficient') && lower.includes('fund')) {
     return 'Your wallet does not have enough ETH on Arbitrum Sepolia to pay gas.';
   }
+  if (
+    lower.includes('rpc endpoint returned too many errors') ||
+    lower.includes('consider using a different rpc endpoint')
+  ) {
+    return 'Shielding failed because the current Arbitrum Sepolia RPC is overloaded. Retry, or switch your wallet/app to a healthier RPC endpoint.';
+  }
+  if (lower.includes('max fee per gas less than block base fee')) {
+    return 'Shielding failed because the wallet used a stale gas estimate. Retry and approve the transaction with a higher max fee.';
+  }
   if (lower.includes('erc20insufficientallowance') || lower.includes('allowance')) {
     return `Shielding failed because the ${symbol} allowance for NoxPay is too low. Re-approve and try again.`;
   }

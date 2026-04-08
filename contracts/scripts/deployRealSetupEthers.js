@@ -23,6 +23,17 @@ function readExistingWalletConnectProjectId(envPath) {
   return match?.[1] || process.env.VITE_WALLETCONNECT_PROJECT_ID || "";
 }
 
+function readExistingEnvVar(envPath, key, fallback = "") {
+  if (!fs.existsSync(envPath)) {
+    return process.env[key] || fallback;
+  }
+
+  const envContent = fs.readFileSync(envPath, "utf8");
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = envContent.match(new RegExp(`^${escapedKey}="?([^"\\n]+)"?$`, "m"));
+  return match?.[1] || process.env[key] || fallback;
+}
+
 async function deployMockUnderlying(wallet) {
   console.log("Deploying MockUSDC test underlying...");
   const usdcArtifact = readArtifact("artifacts/contracts/MockTokens.sol/MockUSDC.json");
@@ -105,10 +116,16 @@ async function main() {
   console.log("\nUpdating frontend/.env.local...");
   const envPath = path.resolve(__dirname, "../../frontend/.env.local");
   const walletConnectProjectId = readExistingWalletConnectProjectId(envPath);
+  const frontendRpcUrl = readExistingEnvVar(
+    envPath,
+    "VITE_ARB_SEPOLIA_RPC_URL",
+    process.env.ARB_SEPOLIA_RPC || "https://sepolia-rollup.arbitrum.io/rpc"
+  );
   const envLines = [
     `VITE_NOXPAY_ADDRESS="${noxpayAddress}"`,
     `VITE_CONFIDENTIAL_TOKEN_ADDRESS="${confidentialTokenAddress}"`,
     `VITE_UNDERLYING_TOKEN_ADDRESS="${underlyingAddress}"`,
+    `VITE_ARB_SEPOLIA_RPC_URL="${frontendRpcUrl}"`,
   ];
   if (walletConnectProjectId) {
     envLines.push(`VITE_WALLETCONNECT_PROJECT_ID="${walletConnectProjectId}"`);
