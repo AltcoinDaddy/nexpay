@@ -28,6 +28,11 @@ export function ShieldTokens() {
   const { decimals, symbol, hasTokenConfig } = useTokenMetadata();
   const hasContractConfig =
     CONTRACTS.NOXPAY !== ZERO_ADDRESS && CONTRACTS.UNDERLYING_TOKEN !== ZERO_ADDRESS;
+  const missingConfigEntries = [
+    CONTRACTS.NOXPAY === ZERO_ADDRESS ? 'VITE_NOXPAY_ADDRESS' : null,
+    CONTRACTS.UNDERLYING_TOKEN === ZERO_ADDRESS ? 'VITE_UNDERLYING_TOKEN_ADDRESS' : null,
+    CONTRACTS.CONFIDENTIAL_TOKEN === ZERO_ADDRESS ? 'VITE_CONFIDENTIAL_TOKEN_ADDRESS' : null,
+  ].filter(Boolean) as string[];
   const hasCorrectChain = chainId === arbitrumSepolia.id;
 
   const { writeContractAsync, isPending } = useWriteContract();
@@ -426,9 +431,24 @@ export function ShieldTokens() {
             </p>
           )}
           {address && !hasContractConfig && (
-            <p className="text-center text-sm text-nox-lightgray">
-              Add valid token and contract addresses to enable shielding.
-            </p>
+            <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 px-4 py-3 text-left">
+              <p className="text-sm font-medium text-amber-200">
+                This deployment is missing shield contract configuration.
+              </p>
+              <p className="mt-2 text-sm text-nox-lightgray">
+                Wallet balance reads are disabled until the frontend is deployed with the Sepolia contract env vars.
+              </p>
+              <div className="mt-3 space-y-1 text-xs font-mono text-nox-lightgray break-all">
+                <p>NoxPay: {CONTRACTS.NOXPAY}</p>
+                <p>Underlying token: {CONTRACTS.UNDERLYING_TOKEN}</p>
+                <p>Confidential token: {CONTRACTS.CONFIDENTIAL_TOKEN}</p>
+              </div>
+              {missingConfigEntries.length > 0 && (
+                <p className="mt-3 text-xs text-amber-200">
+                  Missing env vars: {missingConfigEntries.join(', ')}
+                </p>
+              )}
+            </div>
           )}
           {address && hasCorrectChain && hasContractConfig && hasTokenConfig && underlyingBalance === 0n && (
             <p className="text-center text-sm text-nox-lightgray">
