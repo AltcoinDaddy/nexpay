@@ -2,24 +2,104 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Unlock, ArrowUpRight, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useAccount, usePublicClient, useWriteContract, useWalletClient } from 'wagmi';
-import { parseUnits } from 'viem';
+import { decodeEventLog, parseUnits, type Hex } from 'viem';
 import { CONTRACTS, CONFIDENTIAL_TOKEN_ABI, ZERO_ADDRESS } from '../config/contracts';
 import { useContractConfig } from '../hooks/useContractConfig';
 import { useTokenMetadata } from '../hooks/useTokenMetadata';
 import toast from 'react-hot-toast';
 import { createViemHandleClient } from '@iexec-nox/handle';
 
+type UnshieldStep = 'idle' | 'encrypting' | 'unwrapping' | 'finalizing' | 'done' | 'finalizeError';
+
+function getUnshieldErrorMessage(error: unknown) {
+  const err = error as {
+    shortMessage?: string;
+    details?: string;
+    message?: string;
+    cause?: { shortMessage?: string; details?: string; message?: string };
+  };
+  const rawMessage =
+    err?.shortMessage ||
+    err?.details ||
+    err?.cause?.shortMessage ||
+    err?.cause?.details ||
+    err?.message ||
+    err?.cause?.message ||
+    '';
+  const lower = rawMessage.toLowerCase();
+
+  if (!rawMessage) {
+    return 'Unshielding failed. Check your wallet prompt and try again.';
+  }
+  if (lower.includes('user rejected')) {
+    return 'Unshielding was cancelled in your wallet.';
+  }
+  if (lower.includes('timeout')) {
+    return 'The gateway took too long to return a decryption proof. Please retry finalization.';
+  }
+  if (lower.includes('object not found') || lower.includes('storage error')) {
+    return 'The unwrap handle is not available from the Nox gateway yet. Wait a bit and retry finalization.';
+  }
+
+  return rawMessage.replace(/^error:\s*/i, '').trim();
+}
+
 export function UnshieldTokens() {
   const { address } = useAccount();
   const { data: walletClient } = useWalletClient();
   const [amount, setAmount] = useState('');
-  const [step, setStep] = useState<'idle' | 'encrypting' | 'unwrapping' | 'done'>('idle');
+  const [step, setStep] = useState<UnshieldStep>('idle');
+  const [finalizeHandle, setFinalizeHandle] = useState<Hex | null>(null);
   const contractConfig = useContractConfig();
   const publicClient = usePublicClient();
   const { decimals, symbol, hasTokenConfig } = useTokenMetadata();
   const hasContractConfig = CONTRACTS.CONFIDENTIAL_TOKEN !== ZERO_ADDRESS;
 
   const { writeContractAsync, isPending } = useWriteContract();
+
+  const finalizeUnwrap = async (
+    handleClient: Awaited<ReturnType<typeof createViemHandleClient>>,
+    unwrapHandle: Hex
+  ) => {
+    setStep('finalizing');
+
+    let decryptionProof: Hex | undefined;
+    const maxRetries = 5;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+      try {
+        const result = await Promise.race([
+          handleClient.publicDecrypt(unwrapHandle),
+          new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('publicDecrypt timeout')), 15_000);
+          }),
+        ]);
+        decryptionProof = result.decryptionProof as Hex;
+        break;
+      } catch (error) {
+        if (attempt === maxRetries) {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+      }
+    }
+
+    if (!decryptionProof) {
+      throw new Error('Missing decryption proof');
+    }
+
+    const finalizeHash = await writeContractAsync({
+      address: CONTRACTS.CONFIDENTIAL_TOKEN as `0x${string}`,
+      abi: CONFIDENTIAL_TOKEN_ABI,
+      functionName: 'finalizeUnwrap',
+      args: [unwrapHandle, decryptionProof],
+      ...contractConfig,
+    });
+
+    await publicClient!.waitForTransactionReceipt({ hash: finalizeHash });
+    setFinalizeHandle(null);
+    setStep('done');
+  };
 
   const handleUnshield = async () => {
     if (!amount || parseFloat(amount) <= 0) {
@@ -30,6 +110,8 @@ export function UnshieldTokens() {
       toast.error('Connect your wallet and configure the contract addresses before unshielding.');
       return;
     }
+
+    let nextFinalizeHandle: Hex | null = null;
 
     try {
       setStep('encrypting');
@@ -57,17 +139,65 @@ export function UnshieldTokens() {
         ],
         ...contractConfig,
       });
-      await publicClient.waitForTransactionReceipt({ hash: unwrapHash });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: unwrapHash });
 
-      setStep('done');
-      toast.success(
-        `Submitted unwrap request for ${amount} ${symbol}. Finalize the unwrap with the returned decryption proof before expecting the ERC-20 payout.`
-      );
+      for (const log of receipt.logs) {
+        if (log.address.toLowerCase() !== CONTRACTS.CONFIDENTIAL_TOKEN.toLowerCase()) {
+          continue;
+        }
+
+        try {
+          const decoded = decodeEventLog({
+            abi: CONFIDENTIAL_TOKEN_ABI,
+            data: log.data,
+            topics: log.topics,
+          });
+
+          if (decoded.eventName === 'UnwrapRequested') {
+            nextFinalizeHandle = (decoded.args as { amount: Hex }).amount;
+            break;
+          }
+        } catch {
+          continue;
+        }
+      }
+
+      if (!nextFinalizeHandle) {
+        throw new Error('Could not find the UnwrapRequested event for finalization');
+      }
+
+      setFinalizeHandle(nextFinalizeHandle);
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      await finalizeUnwrap(handleClient, nextFinalizeHandle);
+
       setAmount('');
+      toast.success(`Unshielded ${amount} ${symbol} back to the underlying token.`);
     } catch (err: unknown) {
       console.error('Unwrap error:', err);
-      toast.error('Unshielding request failed. Check your wallet or console.');
-      setStep('idle');
+      const message = getUnshieldErrorMessage(err);
+      if (nextFinalizeHandle) {
+        setStep('finalizeError');
+        toast.error(`Unwrap submitted, but finalization failed. ${message}`);
+      } else {
+        setStep('idle');
+        toast.error(message);
+      }
+    }
+  };
+
+  const handleRetryFinalize = async () => {
+    if (!walletClient || !finalizeHandle || !publicClient) {
+      return;
+    }
+
+    try {
+      const handleClient = await createViemHandleClient(walletClient as any);
+      await finalizeUnwrap(handleClient, finalizeHandle);
+      toast.success('Unwrap finalization completed.');
+    } catch (error) {
+      console.error('Finalize unwrap error:', error);
+      toast.error(getUnshieldErrorMessage(error));
+      setStep('finalizeError');
     }
   };
 
@@ -99,9 +229,8 @@ export function UnshieldTokens() {
               Unwrap Confidential Token → ERC-20
             </h3>
             <p className="text-sm text-nox-lightgray">
-              Convert your confidential ERC-7984 balance back to standard tokens. 
-              This only submits the first unwrap request. A real Nox wrapper still needs a later
-              finalize step with the decryption proof before the ERC-20 transfer is completed.
+              Convert your confidential ERC-7984 balance back to standard tokens.
+              This follows the full unwrap flow: encrypted request, on-chain unwrap, then gateway-backed finalization.
             </p>
           </div>
         </div>
@@ -149,33 +278,39 @@ export function UnshieldTokens() {
               />
               <StepIndicator
                 active={step === 'unwrapping'}
-                completed={step === 'done'}
+                completed={step === 'finalizing' || step === 'done' || step === 'finalizeError'}
                 loading={isPending && step === 'unwrapping'}
                 label="Submit unwrap transaction on-chain"
               />
               <StepIndicator
-                active={false}
+                active={step === 'finalizing'}
                 completed={step === 'done'}
-                loading={false}
-                label="Unwrap submitted. Finalization still needs a proof."
+                loading={step === 'finalizing'}
+                label={step === 'finalizeError'
+                  ? 'Finalization needs to be retried.'
+                  : 'Finalize unwrap with a public decryption proof'}
               />
             </div>
           )}
 
           <button
             onClick={handleUnshield}
-            disabled={!amount || step === 'encrypting' || step === 'unwrapping' || !address || !hasContractConfig}
+            disabled={!amount || step === 'encrypting' || step === 'unwrapping' || step === 'finalizing' || !address || !hasContractConfig}
             className="btn-cyan w-full flex items-center justify-center gap-2 text-base py-3.5"
           >
-            {step === 'encrypting' || step === 'unwrapping' ? (
+            {step === 'encrypting' || step === 'unwrapping' || step === 'finalizing' ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                {step === 'encrypting' ? 'Encrypting Request...' : 'Submitting Unwrap...'}
+                {step === 'encrypting'
+                  ? 'Encrypting Request...'
+                  : step === 'unwrapping'
+                    ? 'Submitting Unwrap...'
+                    : 'Finalizing Unwrap...'}
               </>
             ) : step === 'done' ? (
               <>
                 <CheckCircle2 className="w-5 h-5" />
-                Unwrap Requested!
+                Unwrap Completed!
               </>
             ) : (
               <>
@@ -184,6 +319,16 @@ export function UnshieldTokens() {
               </>
             )}
           </button>
+
+          {step === 'finalizeError' && finalizeHandle && (
+            <button
+              onClick={handleRetryFinalize}
+              disabled={!walletClient}
+              className="w-full rounded-xl border border-nox-cyan/30 bg-nox-cyan/10 py-3 text-sm font-semibold text-nox-cyan transition-all hover:bg-nox-cyan/15 cursor-pointer"
+            >
+              Retry Finalization
+            </button>
+          )}
 
           {!address && (
             <p className="text-center text-sm text-nox-lightgray">

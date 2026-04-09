@@ -13,9 +13,13 @@ export const CONTRACTS = {
 
   // Underlying ERC-20 token (e.g., USDC on Arbitrum Sepolia)
   UNDERLYING_TOKEN: import.meta.env.VITE_UNDERLYING_TOKEN_ADDRESS || '0x0000000000000000000000000000000000000000',
+
+  // NoxCompute proxy used by the official Sepolia SDK flow
+  NOX_COMPUTE: import.meta.env.VITE_NOX_COMPUTE_ADDRESS || '0xd464B198f06756a1d00be223634b85E0a731c229',
 } as const;
 
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
+export const ZERO_HANDLE = (`0x${'0'.repeat(64)}`) as const;
 
 export const DEMO_CONFIDENTIAL_FLOWS_ENABLED =
   import.meta.env.VITE_ENABLE_DEMO_CONFIDENTIAL_FLOWS === 'true';
@@ -237,6 +241,13 @@ export const NOXPAY_ABI = [
 // ─── Confidential Token ABI (for unwrap) ────────────────────
 export const CONFIDENTIAL_TOKEN_ABI = [
   {
+    name: 'confidentialBalanceOf',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ name: '', type: 'bytes32' }],
+  },
+  {
     name: 'unwrap',
     type: 'function',
     stateMutability: 'nonpayable',
@@ -247,6 +258,33 @@ export const CONFIDENTIAL_TOKEN_ABI = [
       { name: 'inputProof', type: 'bytes' },
     ],
     outputs: [{ name: 'requestId', type: 'bytes32' }],
+  },
+  {
+    name: 'finalizeUnwrap',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'unwrapAmount', type: 'bytes32' },
+      { name: 'decryptionProof', type: 'bytes' },
+    ],
+    outputs: [],
+  },
+  {
+    name: 'UnwrapRequested',
+    type: 'event',
+    inputs: [
+      { name: 'receiver', type: 'address', indexed: true },
+      { name: 'amount', type: 'bytes32', indexed: false },
+    ],
+  },
+  {
+    name: 'UnwrapFinalized',
+    type: 'event',
+    inputs: [
+      { name: 'receiver', type: 'address', indexed: true },
+      { name: 'encryptedAmount', type: 'bytes32', indexed: false },
+      { name: 'cleartextAmount', type: 'uint256', indexed: false },
+    ],
   },
 ] as const;
 
