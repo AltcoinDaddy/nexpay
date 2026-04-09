@@ -1,10 +1,8 @@
-# NoxPay — Confidential Payroll & Rewards
-
-> "Send rewards on-chain with hidden balances and amounts. Powered by iExec Nox & Confidential Tokens."
+# NoxPay
 
 ![NoxPay Banner](./screenshots/banner.png)
 
-NoxPay is a confidential payroll and rewards platform built for DAOs, protocols, and Web3 teams. The treasury can send payments and rewards while all **individual amounts and recipient balances remain fully encrypted** using iExec Nox and ERC-7984 Confidential Tokens. Recipients see only their own private balance — decrypted client-side via the Nox JS SDK.
+NoxPay is a confidential payroll and rewards platform for DAOs, protocols, and Web3 teams. Treasuries can send payments on-chain while keeping individual amounts and recipient balances encrypted with iExec Nox and ERC-7984 confidential tokens. Recipients decrypt only their own balance in the client.
 
 ---
 
@@ -58,17 +56,17 @@ NoxPay is a confidential payroll and rewards platform built for DAOs, protocols,
                   └────────────────────┘
 ```
 
-### How Nox & Confidential Tokens Are Used
+### How It Works
 
 1. **Token Shielding (Wrap):** Users call `NoxPay.shieldTokens()` which approves and `wrap()`s their ERC-20 into an ERC-7984 Confidential Token. The balance becomes an encrypted handle on-chain.
 
-2. **Encrypted Payments:** The treasury uses the Nox JS SDK's `encryptInput()` to encrypt the payment amount client-side. The encrypted handle + proof are sent to `sendConfidentialReward()` which calls `confidentialTransfer()` on the ERC-7984 token. All computation happens inside Intel TDX TEEs.
+2. **Encrypted Payments:** The treasury uses the Nox JS SDK's `encryptInput()` to encrypt the payment amount client-side. The encrypted handle and proof are sent to `sendConfidentialReward()`, which calls `confidentialTransfer()` on the ERC-7984 token. All confidential computation happens inside Intel TDX TEEs.
 
 3. **Balance Decryption:** Recipients use `handleClient.decrypt(balanceHandle)` from the JS SDK. The SDK signs an EIP-712 authorization, the on-chain ACL verifies permission, and the plaintext is returned securely — never exposed on-chain.
 
 4. **Selective Disclosure:** Users call `grantViewAccess()` which invokes `addViewer()` on the confidential token's ACL. The auditor can then decrypt the user's balance handle for a limited time.
 
-5. **Vesting:** The contract holds confidential tokens and releases them linearly. The `claimVested()` function transfers the vested portion via confidential transfer securely.
+5. **Vesting:** The contract holds confidential tokens and releases them linearly. The `claimVested()` function transfers the vested portion as a confidential transfer.
 
 ---
 
@@ -83,7 +81,7 @@ noxpay/
 │   │   └── WrappedConfidentialToken.sol # Real Nox ERC-20 → ERC-7984 wrapper
 │   ├── scripts/
 │   │   ├── deployRealSetupEthers.js # Deploy real Nox wrapper + NoxPay
-│   │   └── deployMockSetupEthers.js # Backward-compatible alias to the real deploy flow
+│   │   └── deployMockSetupEthers.js # Alias to the real deploy flow
 │   ├── hardhat.config.js        # Hardhat configuration
 │   └── .env.example             # Environment template
 │
@@ -135,7 +133,7 @@ cp .env.example .env
 npx hardhat compile
 node scripts/deployRealSetupEthers.js
 ```
-This deploys a real iExec Nox ERC-20 wrapper and then deploys `NoxPay` against it. If `UNDERLYING_TOKEN_ADDRESS` is empty, the script first deploys a `MockUSDC` test token and wraps that. The script also updates [frontend/.env.local](./frontend/.env.local) with the new addresses.
+This deploys a real iExec Nox ERC-20 wrapper and then deploys `NoxPay` against it. If `UNDERLYING_TOKEN_ADDRESS` is empty, the script first deploys a `MockUSDC` test token and wraps that. The script also updates `frontend/.env.local` with the new addresses.
 
 Before treasury payouts or vesting transfers will work, the treasury wallet must grant `NoxPay` operator rights on the confidential token:
 
@@ -155,11 +153,11 @@ npm run dev
 
 Visit `http://localhost:5173` in your browser.
 
-## Important Notes
+## Notes
 
 - Real Nox balance handles now come from the official wrapper, so recipient decryption can work correctly on Arbitrum Sepolia.
-- The unshield UI still submits the first `unwrap()` transaction only. Real wrappers require a later `finalizeUnwrap()` call with a decryption proof, so full unshield automation is still a follow-up item.
-- Selective disclosure still assumes contract-managed ACL updates. Real Nox viewer ACLs are tied to the underlying handle admin model, so that flow needs a dedicated follow-up before it is production-ready.
+- The unshield UI currently submits the initial `unwrap()` transaction. Real wrappers also require a later `finalizeUnwrap()` call with a decryption proof before the ERC-20 transfer is completed.
+- Selective disclosure depends on the viewer ACL model exposed by the deployed Nox stack.
 
 ---
 

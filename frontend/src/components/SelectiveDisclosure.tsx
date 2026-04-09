@@ -190,13 +190,13 @@ export function SelectiveDisclosure() {
             </div>
 
             <p className="text-sm text-nox-lightgray mb-4">
-              This uses the connected wallet&apos;s current confidential balance handle from NoxPay instead of a placeholder.
+              Grant a temporary viewer permission for your current confidential balance.
             </p>
 
             <div className="mb-4 rounded-xl border border-nox-cyan/10 bg-nox-cyan/5 p-3">
               <p className="text-xs text-nox-cyan flex items-start gap-2">
                 <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                Revocation is tracked in NoxPay and also attempts a token-side ACL revoke when the underlying token supports it.
+                Access grants are recorded on-chain and can be revoked from this panel at any time.
               </p>
             </div>
 

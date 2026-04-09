@@ -452,18 +452,18 @@ export function RecipientDashboard() {
             <div className="p-4 rounded-xl bg-nox-cyan/5 border border-nox-cyan/10 mb-5">
               <p className="text-sm text-nox-cyan flex items-start gap-2">
                 <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                This repo now shows the live encrypted balance handle, payment count, and vesting state from the contract.
-                Full amount decryption and per-transfer history still need the Nox JS SDK plus event indexing.
+                This panel reads your encrypted balance handle, payment count, and vesting state directly from the contract.
+                Decryption happens client-side through the Nox SDK when the handle is available through the gateway.
               </p>
             </div>
 
             <div className="rounded-xl border border-nox-border/30 bg-nox-dark/30 p-5">
               <p className="text-sm text-white mb-2">
-                What is already live
+                Current view
               </p>
               <p className="text-sm text-nox-lightgray leading-relaxed">
-                Contract-backed recipient counters and vesting schedules are loaded directly on this screen.
-                Once the Nox SDK is wired in, this panel can decrypt balances and event payloads client-side.
+                Recipient counters and vesting schedules are loaded on-chain, while confidential values remain encrypted until
+                you decrypt them from your wallet session.
               </p>
             </div>
           </motion.div>
