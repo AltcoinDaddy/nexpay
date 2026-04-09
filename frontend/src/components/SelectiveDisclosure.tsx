@@ -3,11 +3,9 @@ import { motion } from 'framer-motion';
 import { KeyRound, UserPlus, Trash2, Loader2, Shield, Clock, Info } from 'lucide-react';
 import { isAddress } from 'viem';
 import { useAccount, usePublicClient, useReadContract, useReadContracts, useWriteContract } from 'wagmi';
-import { arbitrumSepolia } from 'wagmi/chains';
 import { CONTRACTS, NOXPAY_ABI, ZERO_ADDRESS } from '../config/contracts';
 import { useContractConfig } from '../hooks/useContractConfig';
 import toast from 'react-hot-toast';
-import { getHandleChainId } from '../utils/noxHandleCompat';
 
 function shortenAddress(address: string) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -78,10 +76,7 @@ export function SelectiveDisclosure() {
     .filter((grant): grant is NonNullable<typeof grant> => grant !== null && grant.active)
     .sort((left, right) => right.expiresAt - left.expiresAt);
   const zeroHandle = `0x${'0'.repeat(64)}`;
-  const handleChainId = typeof balanceHandle === 'string' ? getHandleChainId(balanceHandle) : null;
-  const hasValidBalanceHandle =
-    Boolean(balanceHandle && balanceHandle !== zeroHandle) &&
-    handleChainId === arbitrumSepolia.id;
+  const hasValidBalanceHandle = Boolean(balanceHandle && balanceHandle !== zeroHandle);
 
   const handleGrantAccess = async () => {
     if (!viewerAddress) {
@@ -97,7 +92,7 @@ export function SelectiveDisclosure() {
       return;
     }
     if (!hasValidBalanceHandle || !balanceHandle) {
-      toast.error('This wallet does not have a valid Arbitrum Sepolia balance handle to share yet');
+      toast.error('This wallet does not have a confidential balance handle to share yet');
       return;
     }
 
@@ -197,14 +192,6 @@ export function SelectiveDisclosure() {
             <p className="text-sm text-nox-lightgray mb-4">
               This uses the connected wallet&apos;s current confidential balance handle from NoxPay instead of a placeholder.
             </p>
-
-            {balanceHandle && !hasValidBalanceHandle && (
-              <div className="mb-4 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3">
-                <p className="text-xs text-amber-200">
-                  The current balance handle points to chain {handleChainId ?? 'unknown'} instead of Arbitrum Sepolia ({arbitrumSepolia.id}), so it cannot be shared or decrypted safely from this wallet session.
-                </p>
-              </div>
-            )}
 
             <div className="mb-4 rounded-xl border border-nox-cyan/10 bg-nox-cyan/5 p-3">
               <p className="text-xs text-nox-cyan flex items-start gap-2">

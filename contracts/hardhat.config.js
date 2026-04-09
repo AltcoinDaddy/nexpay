@@ -5,8 +5,9 @@ dotenv.config();
 /** @type import('hardhat/config').HardhatUserConfig */
 export default {
   solidity: {
-    version: "0.8.28",
+    version: "0.8.34",
     settings: {
+      evmVersion: "paris",
       optimizer: {
         enabled: true,
         runs: 200,

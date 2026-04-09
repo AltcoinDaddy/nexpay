@@ -873,7 +873,7 @@ export async function publicDecryptHandleCompat({
 
 function resolveNoxComputeContractAddress(chainId: number): Hex {
   if (chainId === 421614) {
-    return '0xE4622fbFCd0bDd482775bBf5b3e72382C0D99208';
+    return '0xd464B198f06756a1d00be223634b85E0a731c229';
   }
   if (chainId === 31337) {
     return '0x9bdef3F9fEc61eE7cDfE84BDE8398595c6E0b22d';
