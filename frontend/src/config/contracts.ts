@@ -288,6 +288,29 @@ export const CONFIDENTIAL_TOKEN_ABI = [
   },
 ] as const;
 
+export const NOX_COMPUTE_ABI = [
+  {
+    name: 'addViewer',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'handle', type: 'bytes32' },
+      { name: 'viewer', type: 'address' },
+    ],
+    outputs: [],
+  },
+  {
+    name: 'isViewer',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'handle', type: 'bytes32' },
+      { name: 'viewer', type: 'address' },
+    ],
+    outputs: [{ name: '', type: 'bool' }],
+  },
+] as const;
+
 // ─── ERC-20 ABI (for approve) ──────────────────────────────
 export const ERC20_ABI = [
   {

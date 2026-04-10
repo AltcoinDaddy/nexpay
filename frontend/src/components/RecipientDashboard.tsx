@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { formatUnits } from 'viem';
 import { useAccount, useReadContract, useReadContracts, useWalletClient, useWriteContract, usePublicClient } from 'wagmi';
-import { CONTRACTS, NOXPAY_ABI, ZERO_ADDRESS } from '../config/contracts';
+import { CONTRACTS, CONFIDENTIAL_TOKEN_ABI, NOXPAY_ABI, ZERO_ADDRESS, ZERO_HANDLE } from '../config/contracts';
 import { useTokenMetadata } from '../hooks/useTokenMetadata';
 import { useContractConfig } from '../hooks/useContractConfig';
 import { useState } from 'react';
@@ -124,7 +124,8 @@ export function RecipientDashboard() {
   const publicClient = usePublicClient();
   const { decimals, symbol } = useTokenMetadata();
   const contractConfig = useContractConfig();
-  const hasContractConfig = CONTRACTS.NOXPAY !== ZERO_ADDRESS;
+  const hasNoxPayConfig = CONTRACTS.NOXPAY !== ZERO_ADDRESS;
+  const hasConfidentialTokenConfig = CONTRACTS.CONFIDENTIAL_TOKEN !== ZERO_ADDRESS;
 
   const [decryptedBalance, setDecryptedBalance] = useState<string | null>(null);
   const [isDecrypting, setIsDecrypting] = useState(false);
@@ -132,11 +133,11 @@ export function RecipientDashboard() {
   const { writeContractAsync } = useWriteContract();
 
   const { data: balanceHandle } = useReadContract({
-    address: CONTRACTS.NOXPAY as `0x${string}`,
-    abi: NOXPAY_ABI,
-    functionName: 'getConfidentialBalance',
+    address: CONTRACTS.CONFIDENTIAL_TOKEN as `0x${string}`,
+    abi: CONFIDENTIAL_TOKEN_ABI,
+    functionName: 'confidentialBalanceOf',
     args: address ? [address] : undefined,
-    query: { enabled: Boolean(address && hasContractConfig) },
+    query: { enabled: Boolean(address && hasConfidentialTokenConfig) },
   });
 
   const { data: paymentCountData } = useReadContract({
@@ -144,7 +145,7 @@ export function RecipientDashboard() {
     abi: NOXPAY_ABI,
     functionName: 'recipientPaymentCount',
     args: address ? [address] : undefined,
-    query: { enabled: Boolean(address && hasContractConfig) },
+    query: { enabled: Boolean(address && hasNoxPayConfig) },
   });
 
   const { data: vestingCountData } = useReadContract({
@@ -152,7 +153,7 @@ export function RecipientDashboard() {
     abi: NOXPAY_ABI,
     functionName: 'vestingScheduleCount',
     args: address ? [address] : undefined,
-    query: { enabled: Boolean(address && hasContractConfig) },
+    query: { enabled: Boolean(address && hasNoxPayConfig) },
   });
 
   const scheduleIndexes = Array.from(
@@ -169,7 +170,7 @@ export function RecipientDashboard() {
           args: [address, scheduleId],
         }))
       : [],
-    query: { enabled: Boolean(address && scheduleIndexes.length > 0 && hasContractConfig) },
+    query: { enabled: Boolean(address && scheduleIndexes.length > 0 && hasNoxPayConfig) },
   });
 
   const { data: vestedAmountData } = useReadContracts({
@@ -181,7 +182,7 @@ export function RecipientDashboard() {
           args: [address, scheduleId],
         }))
       : [],
-    query: { enabled: Boolean(address && scheduleIndexes.length > 0 && hasContractConfig) },
+    query: { enabled: Boolean(address && scheduleIndexes.length > 0 && hasNoxPayConfig) },
   });
 
   const vestingSchedules = scheduleIndexes
@@ -216,8 +217,7 @@ export function RecipientDashboard() {
     .filter((schedule): schedule is NonNullable<typeof schedule> => schedule !== null);
 
   const paymentCount = Number(paymentCountData ?? 0n).toLocaleString();
-  const zeroHandle = `0x${'0'.repeat(64)}`;
-  const hasEncryptedBalance = Boolean(balanceHandle && balanceHandle !== zeroHandle);
+  const hasEncryptedBalance = Boolean(balanceHandle && balanceHandle !== ZERO_HANDLE);
 
   const handleDecryptBalance = async () => {
     if (!walletClient || !balanceHandle) return;
@@ -327,7 +327,7 @@ export function RecipientDashboard() {
                   {decryptedBalance !== null
                     ? 'Actual balance decrypted locally.'
                     : hasEncryptedBalance
-                      ? 'Encrypted balance handle loaded from the contract.'
+                      ? 'Encrypted balance handle loaded from the confidential token contract.'
                       : 'No encrypted balance handle found for this wallet yet.'}
                 </p>
               </div>
