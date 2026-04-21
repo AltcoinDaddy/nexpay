@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Landmark, Send, Users as UsersIcon, Plus, Trash2, Loader2,
-  Clock, CalendarDays
+  Clock, CalendarDays, Layers3, Sparkles, CheckCircle2
 } from 'lucide-react';
-import { useAccount, usePublicClient, useWriteContract, useWalletClient } from 'wagmi';
+import { useAccount, useChainId, usePublicClient, useWriteContract, useWalletClient } from 'wagmi';
 import { createViemHandleClient } from '@iexec-nox/handle';
 import { isAddress, parseUnits } from 'viem';
+import { arbitrumSepolia } from 'wagmi/chains';
 import {
   CONTRACTS,
   NOXPAY_ABI,
@@ -24,6 +25,7 @@ interface Recipient {
 
 export function TreasuryDashboard() {
   const { address } = useAccount();
+  const chainId = useChainId();
   const { data: walletClient } = useWalletClient();
   const [mode, setMode] = useState<'single' | 'batch' | 'vesting'>('single');
 
@@ -44,6 +46,7 @@ export function TreasuryDashboard() {
   const publicClient = usePublicClient();
   const { decimals, symbol } = useTokenMetadata();
   const hasContractConfig = CONTRACTS.NOXPAY !== ZERO_ADDRESS;
+  const hasCorrectChain = chainId === arbitrumSepolia.id;
 
   const { writeContractAsync: writeContractAsync, isPending } = useWriteContract();
 
@@ -235,6 +238,22 @@ export function TreasuryDashboard() {
   const batchTotal = batchRecipients
     .reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0)
     .toFixed(2);
+  const singleAmountValue = parseFloat(paymentAmount) || 0;
+  const vestingAmountValue = parseFloat(vestingAmount) || 0;
+  const vestingDaysValue = parseInt(vestingDays, 10) || 0;
+  const readyChecks = [
+    { label: 'Wallet connected', ok: Boolean(address) },
+    { label: 'Arbitrum Sepolia selected', ok: hasCorrectChain },
+    { label: 'NoxPay deployed', ok: hasContractConfig },
+    { label: 'Wallet client ready', ok: Boolean(walletClient) },
+  ];
+  const modeSummary = mode === 'single'
+    ? `${singleAmountValue.toFixed(2)} ${symbol} ready for one recipient`
+    : mode === 'batch'
+      ? `${batchRecipients.filter((recipient) => recipient.address && recipient.amount).length} recipients, ${batchTotal} ${symbol} total`
+      : vestingDaysValue > 0
+        ? `${vestingAmountValue.toFixed(2)} ${symbol} over ${vestingDaysValue} days`
+        : `Set an amount and duration to preview the vesting plan`;
 
   return (
     <motion.section
@@ -253,6 +272,47 @@ export function TreasuryDashboard() {
           <p className="text-xs text-nox-lightgray">
             Send confidential rewards and create vesting schedules
           </p>
+        </div>
+      </div>
+
+      <div className="glass-card p-6 sm:p-7 max-w-3xl mb-6 border-nox-gold/20">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-xl">
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles className="w-4 h-4 text-nox-gold" />
+              <span className="text-xs font-semibold tracking-[0.18em] uppercase text-nox-gold">
+                Payout Planner
+              </span>
+            </div>
+            <h3 className="text-lg font-semibold text-white mb-2">
+              Build the next confidential payout with fewer manual steps
+            </h3>
+            <p className="text-sm text-nox-lightgray">
+              This panel keeps the treasury flow demo-friendly: it shows whether the wallet is ready,
+              summarizes the active payout mode, and gives quick presets for common reward and vesting sizes.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-nox-border/40 bg-nox-dark/30 p-4 min-w-0 lg:w-[320px]">
+            <div className="flex items-center gap-2 mb-3">
+              <Layers3 className="w-4 h-4 text-nox-cyan" />
+              <span className="text-sm font-semibold text-white">Current Plan</span>
+            </div>
+            <p className="text-sm text-nox-lightgray mb-3">
+              {modeSummary}
+            </p>
+            <div className="space-y-2">
+              {readyChecks.map((check) => (
+                <div key={check.label} className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-nox-lightgray">{check.label}</span>
+                  <span className={`inline-flex items-center gap-1 text-xs font-medium ${check.ok ? 'text-nox-cyan' : 'text-nox-warning'}`}>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {check.ok ? 'Ready' : 'Check'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -326,6 +386,17 @@ export function TreasuryDashboard() {
                     {symbol}
                   </span>
                 </div>
+                <div className="flex gap-2 flex-wrap mt-3">
+                  {['25', '100', '250', '500'].map((value) => (
+                    <button
+                      key={value}
+                      onClick={() => setPaymentAmount(value)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium text-nox-lightgray border border-nox-border hover:border-nox-gold hover:text-nox-gold transition-all cursor-pointer"
+                    >
+                      {Number(value).toLocaleString()} {symbol}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="p-3 rounded-xl bg-nox-cyan/5 border border-nox-cyan/10">
@@ -337,7 +408,7 @@ export function TreasuryDashboard() {
 
               <button
                 onClick={handleSendSingle}
-                disabled={isPending || !address || !hasContractConfig || !walletClient}
+                disabled={isPending || !address || !hasContractConfig || !walletClient || !hasCorrectChain}
                 className="btn-gold w-full flex items-center justify-center gap-2 py-3.5"
               >
                 {isPending ? (
@@ -433,7 +504,7 @@ export function TreasuryDashboard() {
 
             <button
               onClick={handleSendBatch}
-              disabled={isPending || !address || !hasContractConfig || !walletClient}
+              disabled={isPending || !address || !hasContractConfig || !walletClient || !hasCorrectChain}
               className="btn-gold w-full flex items-center justify-center gap-2 py-3.5"
             >
               {isPending ? (
@@ -492,6 +563,17 @@ export function TreasuryDashboard() {
                       {symbol}
                     </span>
                   </div>
+                  <div className="flex gap-2 flex-wrap mt-3">
+                    {['100', '500', '1000', '5000'].map((value) => (
+                      <button
+                        key={value}
+                        onClick={() => setVestingAmount(value)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium text-nox-lightgray border border-nox-border hover:border-nox-gold hover:text-nox-gold transition-all cursor-pointer"
+                      >
+                        {Number(value).toLocaleString()}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-nox-lightgray mb-2">
@@ -508,6 +590,17 @@ export function TreasuryDashboard() {
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-nox-lightgray text-xs">
                       Days
                     </span>
+                  </div>
+                  <div className="flex gap-2 flex-wrap mt-3">
+                    {['30', '90', '180', '365'].map((value) => (
+                      <button
+                        key={value}
+                        onClick={() => setVestingDays(value)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium text-nox-lightgray border border-nox-border hover:border-nox-gold hover:text-nox-gold transition-all cursor-pointer"
+                      >
+                        {value}d
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -546,7 +639,7 @@ export function TreasuryDashboard() {
 
               <button
                 onClick={handleCreateVesting}
-                disabled={isPending || !address || !hasContractConfig || !walletClient}
+                disabled={isPending || !address || !hasContractConfig || !walletClient || !hasCorrectChain}
                 className="btn-gold w-full flex items-center justify-center gap-2 py-3.5"
               >
                 {isPending ? (

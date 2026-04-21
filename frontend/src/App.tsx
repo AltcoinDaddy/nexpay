@@ -8,6 +8,7 @@ import { PublicStats } from './components/PublicStats';
 import { ShieldTokens } from './components/ShieldTokens';
 import { UnshieldTokens } from './components/UnshieldTokens';
 import { SelectiveDisclosure } from './components/SelectiveDisclosure';
+import { ActivityTimeline } from './components/ActivityTimeline';
 import { Footer } from './components/Footer';
 
 type ViewMode = 'landing' | 'treasury' | 'recipient';
@@ -37,6 +38,7 @@ function App() {
               <PublicStats />
               <ShieldTokens />
               <TreasuryDashboard />
+              <ActivityTimeline mode="treasury" />
               <SelectiveDisclosure />
             </div>
           ) : (
@@ -44,6 +46,7 @@ function App() {
               <PublicStats />
               <RecipientDashboard />
               <UnshieldTokens />
+              <ActivityTimeline mode="recipient" />
               <SelectiveDisclosure />
             </div>
           )}

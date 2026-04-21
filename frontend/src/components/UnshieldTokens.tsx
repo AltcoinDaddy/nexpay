@@ -11,6 +11,38 @@ import { createViemHandleClient } from '@iexec-nox/handle';
 
 type UnshieldStep = 'idle' | 'encrypting' | 'unwrapping' | 'finalizing' | 'done' | 'finalizeError';
 
+type TopicLog = {
+  data: Hex;
+  topics: readonly [Hex, ...Hex[]];
+};
+
+type UnwrapRequestedLog = {
+  eventName: 'UnwrapRequested';
+  args: {
+    amount: Hex;
+  };
+};
+
+function hasTopics(log: { data: Hex }): log is TopicLog {
+  const topics = (log as { topics?: unknown }).topics;
+  return Array.isArray(topics) && topics.length > 0;
+}
+
+function isUnwrapRequestedLog(decoded: unknown): decoded is UnwrapRequestedLog {
+  const event = decoded as {
+    eventName?: unknown;
+    args?: {
+      amount?: unknown;
+    };
+  };
+
+  return (
+    event.eventName === 'UnwrapRequested' &&
+    typeof event.args?.amount === 'string' &&
+    event.args.amount.startsWith('0x')
+  );
+}
+
 function getUnshieldErrorMessage(error: unknown) {
   const err = error as {
     shortMessage?: string;
@@ -145,6 +177,9 @@ export function UnshieldTokens() {
         if (log.address.toLowerCase() !== CONTRACTS.CONFIDENTIAL_TOKEN.toLowerCase()) {
           continue;
         }
+        if (!hasTopics(log)) {
+          continue;
+        }
 
         try {
           const decoded = decodeEventLog({
@@ -153,8 +188,8 @@ export function UnshieldTokens() {
             topics: log.topics,
           });
 
-          if (decoded.eventName === 'UnwrapRequested') {
-            nextFinalizeHandle = (decoded.args as { amount: Hex }).amount;
+          if (isUnwrapRequestedLog(decoded)) {
+            nextFinalizeHandle = decoded.args.amount;
             break;
           }
         } catch {
